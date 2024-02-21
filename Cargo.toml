@@ -1,0 +1,30 @@
+[package]
+name = "photo_sort"
+version = "0.1.0"
+edition = "2021"
+description = """
+A tool to rename and sort photos by its EXIF date. It tries to extract the date
+from the EXIF data or file name and renames the image file according to a given
+format string.
+
+Foreach source directory all images are processed and renamed to the target directory"""
+readme = "README.md"
+keywords = ["photo", "sort", "exif", "rename", "date"]
+license = "GPL-3.0-or-later"
+homepage = "https://github.com/0xCCF4/PhotoSort"
+repository = "https://github.com/0xCCF4/PhotoSort"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.80"
+chrono = "0.4.34"
+kamadak-exif = "0.5.5"
+regex = "1.10.3"
+lazy_static = "1.4.0"
+clap = { version = "4.5.1", features = ["derive"] }
+aho-corasick = "1.1.2"
+env_logger = "0.11.2"
+log = "0.4.20"
+filetime = "0.2.23"
+symlink = "0.1.0"
