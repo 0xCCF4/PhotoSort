@@ -1,3 +1,89 @@
+//! # PhotoSort
+//!
+//! PhotoSort is a robust command-line tool written in Rust, designed to streamline the organization of your photo collections.
+//! It works by sourcing images from a specified directory, extracting the date from either the file name or its EXIF data,
+//! and then moving or copying the file to a target directory. This process is fully customizable, allowing you to tailor the tool to your specific needs.
+//!
+//! ## Using the Library
+//!
+//! To use the PhotoSort library in your Rust project, you need to add it as a dependency in your `Cargo.toml` file:
+//!
+//! ```toml
+//! [dependencies]
+//! photo_sort = "0.1.0"
+//! ```
+//!
+//! Then, in your Rust code, you can import the `photo_sort` crate and use its functionality. Here's an example:
+//!
+//! ```rust
+//! use photo_sort::{Analyzer, AnalyzerSettings, AnalysisType, action::ActionMode};
+//! use std::path::Path;
+//!
+//! let settings = AnalyzerSettings {
+//!     use_standard_transformers: true,
+//!     analysis_type: AnalysisType::ExifThenName,
+//!     source_dirs: vec![Path::new("/path/to/photos")],
+//!     target_dir: Path::new("/path/to/sorted_photos"),
+//!     recursive_source: false,
+//!     file_format: "IMG_{:date}_{:name}{:?dup}".to_string(),
+//!     date_format: "%Y%m%d-%H%M%S".to_string(),
+//!     extensions: vec!["jpg".to_string(), "jpeg".to_string(), "png".to_string()],
+//!     action_type: ActionMode::Move,
+//! };
+//!
+//! let analyzer = Analyzer::new(settings).unwrap();
+//! analyzer.run().unwrap();
+//! ```
+//!
+//! This will sort the photos in the `/path/to/photos` directory, rename them based on their EXIF data and then move them to the `/path/to/sorted_photos` directory.
+//!
+//! ## Features
+//!
+//! - **Recursive Source Directory**: PhotoSort can search the source directories recursively. If the flag is not set, only immediate children of the source directories are considered.
+//! - **Custom Target Format**: You can define your own date and file formats for the renamed files. Use placeholders like `{:date}`, `{:name}`, and `{:dup}` to customize the file names.
+//! - **Analysis Mode**: Choose how you want to extract the date from your files. Options include `only_exif`, `only_name`, `name_then_exif`, and `exif_then_name`.
+//! - **Move Mode**: Choose how you want to organize your files. Options include `move`, `copy`, `hardlink`, `relative_symlink`, `absolute_symlink`.
+//! - **Dry Run Mode**: Test the tool without making any changes to your files. The tool will print the actions it would take without actually executing them.
+//!
+//! ## Usage
+//!
+//! To use PhotoSort binary, you need to pass in a set of arguments to define how you want to sort your photos. Here is an example:
+//!
+//! ```bash
+//! photo_sort --source_dir /path/to/photos --target_dir /path/to/sorted_photos --analysis_mode exif_then_name --move_mode move
+//! ```
+//!
+//! This command will sort the photos in the `/path/to/photos` directory, rename them based on their EXIF data and then move them to the `/path/to/sorted_photos` directory.
+//!
+//! For a full list of available options, run `photo_sort --help`.
+//!
+//! ## Installation
+//!
+//! To install PhotoSort, you need to have Rust and Cargo installed on your system. Once you have these prerequisites, you can clone the repository and build the project:
+//!
+//! ```bash
+//! git clone https://github.com/username/photo_sort.git
+//! cd photo_sort
+//! cargo build --release
+//! ```
+//!
+//! The `photo_sort` binary will be available in the `target/release` directory.
+//!
+//! ## Contributing
+//!
+//! Contributions to PhotoSort are welcome! If you have a feature request, bug report, or want to contribute to the code, please open an issue or a pull request.
+//!
+//! ## License
+//!
+//! PhotoSort is licensed under the GPLv3 license. See the LICENSE file for more details.
+//!
+//! ## Modules
+//!
+//! - [`analysis`](analysis/index.html) - Contains functions and structs for analyzing the EXIF data and file names.
+//! - [`name`](name/index.html) - Contains functions and structs for transforming file names.
+//! - [`action`](action/index.html) - Contains functions and structs for performing actions on files.
+//!
+
 use std::ffi::OsStr;
 use std::fs;
 use std::fs::File;
