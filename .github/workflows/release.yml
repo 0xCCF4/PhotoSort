@@ -30,3 +30,6 @@ jobs:
           RUSTTARGET: ${{ matrix.target }}
           ARCHIVE_TYPES: ${{ matrix.archive }}
           TOOLCHAIN_VERSION: stable
+    permissions:
+      contents: write
+
