@@ -22,8 +22,8 @@
 //! let settings = AnalyzerSettings {
 //!     use_standard_transformers: true,
 //!     analysis_type: AnalysisType::ExifThenName,
-//!     source_dirs: vec![Path::new("/path/to/photos")],
-//!     target_dir: Path::new("/path/to/sorted_photos"),
+//!     source_dirs: vec![Path::new("tests/src")],
+//!     target_dir: Path::new("tests/dst"),
 //!     recursive_source: false,
 //!     file_format: "IMG_{:date}_{:name}{:?dup}".to_string(),
 //!     date_format: "%Y%m%d-%H%M%S".to_string(),
