@@ -22,8 +22,8 @@
 //! let settings = AnalyzerSettings {
 //!     use_standard_transformers: true,
 //!     analysis_type: AnalysisType::ExifThenName,
-//!     source_dirs: vec![Path::new("/path/to/photos")],
-//!     target_dir: Path::new("/path/to/sorted_photos"),
+//!     source_dirs: vec![Path::new("tests/src")],
+//!     target_dir: Path::new("tests/dst"),
 //!     recursive_source: false,
 //!     file_format: "IMG_{:date}_{:name}{:?dup}".to_string(),
 //!     date_format: "%Y%m%d-%H%M%S".to_string(),
@@ -55,19 +55,52 @@
 //!
 //! This command will sort the photos in the `/path/to/photos` directory, rename them based on their EXIF data and then move them to the `/path/to/sorted_photos` directory.
 //!
-//! For a full list of available options, run `photo_sort --help`.
+//! For a full list of available options, run `photo_sort --help`:
+//! ```text
+//! $ photo_sort --help
+//!
+//! A tool to rename and sort photos by its EXIF date. It tries to extract the date
+//! from the EXIF data or file name and renames the image file according to a given
+//! format string.
+//!
+//! Foreach source directory all images are processed and renamed to the target directory
+//!
+//! Usage: photo_sort [OPTIONS] --source-dir <SOURCE_DIR>... --target-dir <TARGET_DIR>
+//!
+//! Options:
+//! -s, --source-dir <SOURCE_DIR>...     The source directory to read the photos from
+//! -t, --target-dir <TARGET_DIR>        The target directory to write the sorted photos to
+//! -r, --recursive                      Whether to search the source directories recursively. If the flag is not set only immediate children of the source directories are considered
+//! --date-format <DATE_FORMAT>      Date format string to use for the target directory. The format string is passed to the `chrono` crate's `format` method [default: %Y%m%d-%H%M%S]
+//! -f, --file-format <FILE_FORMAT>      The target file format. {:date} is replaced with the date and {:name} with the original file name. {:dup} is replaced with a number if the file already exists. {:date} is replaced with the date and {:name} with the original file name. {:?dup} is replaced with _{:dup} if the file already exists [default: IMG_{:date}_{:name}{:?dup}]
+//! -e, --extensions [<EXTENSIONS>...]   A comma separated list of file extensions to include in the analysis [default: jpg,jpeg,png]
+//! -a, --analysis-mode <ANALYSIS_MODE>  The sorting mode, possible values are name_then_exif, exif_then_name, only_name, only_exif. Name analysis tries to extract the date from the file name, Exif analysis tries to extract the date from the EXIF data [default: exif_then_name]
+//! -m, --move-mode <MOVE_MODE>          The action mode, possible values are move, copy, hardlink, relative_symlink, absolute_symlink. Move will move the files, Copy will copy the files, Hardlink (alias: hard) will create hardlinks, RelativeSymlink (alias: relsym) will create relative symlinks, AbsoluteSymlink (alias: abssym) will create absolute symlinks [default: move]
+//! -n, --dry-run                        Dry-run If set, the tool will not move any files but only print the actions it would take
+//! -c, --copy                           Don't remove source files. If flag set, the source files will be copied instead of moved
+//! -v, --verbose                        Be verbose, if set, the tool will print more information about the actions it takes. Setting the RUST_LOG env var overrides this flag
+//! -d, --debug                          Debug, if set, the tool will print debug information (including debug implies setting verbose). Setting the RUST_LOG env var overrides this flag
+//! -h, --help                           Print help
+//! -V, --version                        Print version
+//! ```
 //!
 //! ## Installation
 //!
-//! To install PhotoSort, you need to have Rust and Cargo installed on your system. Once you have these prerequisites, you can clone the repository and build the project:
+//! To install PhotoSort, you need to have Cargo installed on your system.
+//!
+//! ```bash
+//! cargo install photo_sort
+//! ```
+//!
+//! or
 //!
 //! ```bash
 //! git clone https://github.com/username/photo_sort.git
 //! cd photo_sort
-//! cargo build --release
+//! cargo install --path .
 //! ```
 //!
-//! The `photo_sort` binary will be available in the `target/release` directory.
+//! The `photo_sort` binary will then be available.
 //!
 //! ## Contributing
 //!
