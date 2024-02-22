@@ -77,7 +77,6 @@
 //! -a, --analysis-mode <ANALYSIS_MODE>  The sorting mode, possible values are name_then_exif, exif_then_name, only_name, only_exif. Name analysis tries to extract the date from the file name, Exif analysis tries to extract the date from the EXIF data [default: exif_then_name]
 //! -m, --move-mode <MOVE_MODE>          The action mode, possible values are move, copy, hardlink, relative_symlink, absolute_symlink. Move will move the files, Copy will copy the files, Hardlink (alias: hard) will create hardlinks, RelativeSymlink (alias: relsym) will create relative symlinks, AbsoluteSymlink (alias: abssym) will create absolute symlinks [default: move]
 //! -n, --dry-run                        Dry-run If set, the tool will not move any files but only print the actions it would take
-//! -c, --copy                           Don't remove source files. If flag set, the source files will be copied instead of moved
 //! -v, --verbose                        Be verbose, if set, the tool will print more information about the actions it takes. Setting the RUST_LOG env var overrides this flag
 //! -d, --debug                          Debug, if set, the tool will print debug information (including debug implies setting verbose). Setting the RUST_LOG env var overrides this flag
 //! -h, --help                           Print help

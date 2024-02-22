@@ -43,9 +43,6 @@ struct Arguments {
     /// If set, the tool will not move any files but only print the actions it would take.
     #[arg(short = 'n', long, default_value = "false")]
     dry_run: bool,
-    /// Don't remove source files. If flag set, the source files will be copied instead of moved.
-    #[arg(short, long, default_value = "false")]
-    copy: bool,
     /// Be verbose, if set, the tool will print more information about the actions it takes. Setting the RUST_LOG env var overrides this flag.
     #[arg(short, long, default_value = "false")]
     verbose: bool,
