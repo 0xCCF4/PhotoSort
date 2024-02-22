@@ -10,7 +10,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! photo_sort = "0.1.0"
+//! photo_sort = "0.1.2"
 //! ```
 //!
 //! Then, in your Rust code, you can import the `photo_sort` crate and use its functionality. Here's an example:
