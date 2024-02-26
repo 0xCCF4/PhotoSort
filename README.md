@@ -10,7 +10,7 @@ this can be confusing, as the photos are not sorted by date. PhotoSort solves th
 renaming images based on their EXIF data or file name, unifying the naming convention and making
 to go through the photos by date.
 
-The documentation can be found here: https://docs.rs/photo_sort/latest/photo_sort/
+The documentation can be found here: https://docs.rs/photo_sort
 
 ## Features
 
@@ -27,7 +27,9 @@ The documentation can be found here: https://docs.rs/photo_sort/latest/photo_sor
 To use PhotoSort, you need to pass in a set of arguments to define how you want to sort your photos. Here is an example:
 
 ```bash
-photo_sort --source_dir /path/to/photos --target_dir /path/to/sorted_photos
+photo_sort \
+  --source_dir /path/to/photos \
+  --target_dir /path/to/sorted_photos
 ```
 
 This command will sort the photos in the `/path/to/photos` directory, rename them based on their EXIF data or name and
@@ -37,14 +39,14 @@ them to the `/path/to/sorted_photos` directory.
 Another example:
 
 ```bash
-photo_sort
-  --source_dir /path/to/photos
-  --recursive
-  --target_dir /path/to/sorted_photos
-  --analysis-mode "exif_then_name"
-  --date-format "%Y-%m-%d-_%H%M%S"
-  --file-format "{:date}{:?dup}"
-  --extensions "png,jpg"
+photo_sort \
+  --source_dir /path/to/photos \
+  --recursive \
+  --target_dir /path/to/sorted_photos \
+  --analysis-mode "exif_then_name" \
+  --date-format "%Y-%m-%d-_%H%M%S" \
+  --file-format "{:date}{:?dup}" \
+  --extensions "png,jpg" \
   --move-mode "hardlink"
 ```
 

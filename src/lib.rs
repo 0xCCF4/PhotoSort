@@ -10,7 +10,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! photo_sort = "0.1.2"
+//! photo_sort = "0.1.4"
 //! ```
 //!
 //! Then, in your Rust code, you can import the `photo_sort` crate and use its functionality. Here's an example:
@@ -28,14 +28,14 @@
 //!     file_format: "IMG_{:date}_{:name}{:?dup}".to_string(),
 //!     date_format: "%Y%m%d-%H%M%S".to_string(),
 //!     extensions: vec!["jpg".to_string(), "jpeg".to_string(), "png".to_string()],
-//!     action_type: ActionMode::Move,
+//!     action_type: ActionMode::DryRun,
 //! };
 //!
 //! let analyzer = Analyzer::new(settings).unwrap();
 //! analyzer.run().unwrap();
 //! ```
 //!
-//! This will sort the photos in the `/path/to/photos` directory, rename them based on their EXIF data and then move them to the `/path/to/sorted_photos` directory.
+//! This will sort the photos in the `tests/src` directory, rename them based on their EXIF data and then move them to the `tests/dst` directory.
 //!
 //! ## Features
 //!
@@ -50,7 +50,11 @@
 //! To use PhotoSort binary, you need to pass in a set of arguments to define how you want to sort your photos. Here is an example:
 //!
 //! ```bash
-//! photo_sort --source_dir /path/to/photos --target_dir /path/to/sorted_photos --analysis_mode exif_then_name --move_mode move
+//! photo_sort \
+//!     --source_dir /path/to/photos \
+//!     --target_dir /path/to/sorted_photos \
+//!     --analysis_mode exif_then_name \
+//!     --move_mode move
 //! ```
 //!
 //! This command will sort the photos in the `/path/to/photos` directory, rename them based on their EXIF data and then move them to the `/path/to/sorted_photos` directory.
@@ -351,7 +355,7 @@ impl Analyzer<'_> {
 
     fn compose_file_name(&self, date: &str, name: &str, dup: &str) -> Result<String> {
         let patterns = &["{:date}", "{:name}", "{:dup}", "{:?dup}"];
-        let dup2 = "_".to_string() + dup;
+        let dup2 = if dup.len() > 0 { "_".to_string() + dup } else { "".to_string() };
         let replacements = &[date, name, dup, dup2.as_str()];
         let ac = AhoCorasick::new(patterns)?;
         // Replace all patterns at once to avoid being influenced by e.g. the file name

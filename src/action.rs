@@ -93,7 +93,7 @@ pub fn file_action(source: &PathBuf, target: &PathBuf, action: &ActionMode) -> s
 }
 
 fn dry_run(source: &PathBuf, target: &PathBuf) -> std::io::Result<()> {
-    println!("Copying {:?} -> {:?}", source, target);
+    println!("{:?} -> {:?}", source, target);
     Ok(())
 }
 
