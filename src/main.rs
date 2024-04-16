@@ -31,7 +31,7 @@ struct Arguments {
     #[arg(short, long, default_value = "{:type}_{:date}{:?name}{:?dup}")]
     file_format: String,
     /// A comma separated list of file extensions to include in the analysis.
-    #[arg(short, long, default_value = "jpg,jpeg,png", value_delimiter = ',', num_args = 0..)]
+    #[arg(short, long, default_value = "jpg,jpeg,png,tiff,heif,heic,avif,webp", value_delimiter = ',', num_args = 0..)]
     extensions: Vec<String>,
     #[cfg(feature = "video")]
     /// A comma separated list of video extensions to include in the analysis.
