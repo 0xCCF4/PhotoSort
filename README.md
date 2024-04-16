@@ -1,14 +1,14 @@
 # PhotoSort
 
-PhotoSort is a robust command-line tool written in Rust, designed to streamline the organization of your photo
-collections. It works by sourcing images from a source directory, extracting the date from either the file name or
-its EXIF data, and then moving or copying the file to a target directory.
+PhotoSort is a robust command-line tool written in Rust, designed to streamline the organization of your photo/video
+collections. It works by sourcing images/videos from a source directory, extracting the date from either the file name or
+its EXIF/metadata data, and then moving or copying the file to a target directory.
 
-PhotoSort solves the problem of having pictures from different cameras and devices that use
-different naming conventions to name created files. When viewing the photos in a file browser
-this can be confusing, as the photos are not sorted by date. PhotoSort solves this problem by
-renaming images based on their EXIF data or file name, unifying the naming convention and making
-to go through the photos by date.
+PhotoSort solves the problem of having pictures/videos from different cameras and devices that use
+different naming conventions to name created files. When viewing the photos/videos in a file browser
+this can be confusing, as the photos/videos are not sorted by date. PhotoSort solves this problem by
+renaming images/videos based on their EXIF/metadata data or file name, unifying the naming convention and making
+to go through the photos/videos by date.
 
 The documentation can be found here: https://docs.rs/photo_sort
 
@@ -21,6 +21,7 @@ The documentation can be found here: https://docs.rs/photo_sort
 - **Recursive Source Directory**: PhotoSort can search the source directories recursively.
 - **Dry Run Mode**: Test the tool without making any changes to your files. The tool will print the actions it would
   take without actually executing them.
+- **Sort photos and videos**: PhotoSort can sort both photos and videos by their metadata.
 
 ## Usage
 
@@ -55,7 +56,7 @@ EXIF date (if not found then its name) and then hardlink them to the `/path/to/s
 The files will be renamed to the format `YYYY-MM-DD_HHMMSS[_##]`, only `.png` and `.jpg` files will be processed.
 
 For a full list of available options, run `photo_sort --help`:
-```
+```text
 $ photo_sort --help
 
 A tool to rename and sort photos by its EXIF date. It tries to extract the date
@@ -79,7 +80,10 @@ Options:
   -v, --verbose                        Be verbose, if set, the tool will print more information about the actions it takes. Setting the RUST_LOG env var overrides this flag
   -d, --debug                          Debug, if set, the tool will print debug information (including debug implies setting verbose). Setting the RUST_LOG env var overrides this flag
   -h, --help                           Print help
-  -V, --version                        Print version                                                                                                                                                                         
+  -V, --version                        Print version        
+  
+When building with video support enabled (see below):
+      --video-extensions [<VIDEO_EXTENSIONS>...]  A comma separated list of video extensions to include in the analysis [default: mp4,mov,avi]                                                                                                                                                                 
 ```
 
 ## Installation
@@ -93,12 +97,28 @@ cargo install photo_sort
 or
 
 ```bash
-git clone https://github.com/username/photo_sort.git
+git clone https://github.com/0xCCF4/photo_sort.git
 cd photo_sort
 cargo install --path .
 ```
 
 The `photo_sort` binary will then be available.
+
+For using the video sorting feature follow the instructions on <https://crates.io/crates/ffmpeg-next> and respective
+their wiki <https://github.com/zmwangx/rust-ffmpeg/wiki/Notes-on-building>. After installing the
+dependencies, you can install the `photo_sort` binary with the `video` feature enabled:
+
+```bash
+cargo install --features video photo_sort
+```
+
+or 
+
+```bash
+git clone https://github.com/0xCCF4/photo_sort.git
+cd photo_sort
+cargo install --features video --path .
+```
 
 ## Contributing
 

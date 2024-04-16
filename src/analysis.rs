@@ -81,7 +81,7 @@ pub fn get_video_time<P: AsRef<Path> + ?Sized>(path: &P) -> Result<Option<NaiveD
     let instance = ffmpeg::format::input(&path)?;
 
     let result = instance.metadata().get("creation_time")
-        .map(|v| NaiveDateTime::parse_from_str(v, "%Y-%m-%dT%H:%M:%S%.f"));
+        .map(|v| NaiveDateTime::parse_from_str(v, "%Y-%m-%dT%H:%M:%S%Z"));
 
     Ok(result.transpose()?)
 }

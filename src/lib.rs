@@ -83,6 +83,8 @@ pub struct AnalyzerSettings<'a> {
     pub file_format: String,
     pub date_format: String,
     pub extensions: Vec<String>,
+    #[cfg(feature = "video")]
+    pub video_extensions: Vec<String>,
     pub action_type: ActionMode,
 }
 
@@ -168,9 +170,39 @@ impl Analyzer<'_> {
         }
     }
 
-    fn analyze_exif(&self, file: &File) -> Result<Option<NaiveDateTime>> {
+    fn analyze_photo_exif(&self, file: &File) -> Result<Option<NaiveDateTime>> {
         let exif_time = analysis::get_exif_time(file)?;
         Ok(exif_time)
+    }
+
+    #[cfg(feature = "video")]
+    fn analyze_video_metadata(&self, path: &PathBuf) -> Result<Option<NaiveDateTime>> {
+        let video_time = analysis::get_video_time(path)?;
+        Ok(video_time)
+    }
+
+    fn analyze_exif(&self, path: &PathBuf) -> Result<Option<NaiveDateTime>> {
+        #[cfg(feature = "video")]
+        let video = self.is_valid_video_extension(path.extension())?;
+        let photo = self.is_valid_photo_extension(path.extension())?;
+
+        #[cfg(feature = "video")]
+        {
+            if video && photo {
+                return Err(anyhow::anyhow!("File has both photo and video extensions. Do not include the same extension in both settings"));
+            }
+        }
+
+        if photo {
+            let file = File::open(path)?;
+            return self.analyze_photo_exif(&file);
+        }
+        #[cfg(feature = "video")]
+        if video {
+            return self.analyze_video_metadata(path);
+        }
+
+        Err(anyhow::anyhow!("File extension is not valid"))
     }
 
     /// Analyzes a file based on the `Analyzer`'s settings.
@@ -194,10 +226,17 @@ impl Analyzer<'_> {
     pub fn analyze(&self, path: &PathBuf) -> Result<(Option<NaiveDateTime>, String)> {
         let name = path.file_name().ok_or(anyhow::anyhow!("No file name"))?.to_str().ok_or(anyhow::anyhow!("Invalid file name"))?;
 
+        if !self.is_valid_extension(path.extension()).unwrap_or_else(|err| {
+            warn!("Error checking file extension: {}", err);
+            false
+        }) {
+            warn!("Skipping file with invalid extension: {:?}", path);
+            return Err(anyhow::anyhow!("Invalid file extension"));
+        }
+
         Ok(match self.settings.analysis_type {
             AnalysisType::OnlyExif => {
-                let file = File::open(&path)?;
-                let exif_result = self.analyze_exif(&file)?;
+                let exif_result = self.analyze_exif(&path)?;
                 let name_result = self.analyze_name(name);
 
                 match name_result {
@@ -209,8 +248,7 @@ impl Analyzer<'_> {
                 self.analyze_name(name)?
             },
             AnalysisType::ExifThenName => {
-                let file = File::open(&path)?;
-                let exif_result = self.analyze_exif(&file)?;
+                let exif_result = self.analyze_exif(&path)?;
                 let name_result = self.analyze_name(name);
 
                 match exif_result {
@@ -224,8 +262,7 @@ impl Analyzer<'_> {
             AnalysisType::NameThenExif => {
                 let name_result = self.analyze_name(name)?;
                 if name_result.0.is_none() {
-                    let file = File::open(&path)?;
-                    (self.analyze_exif(&file)?, name_result.1)
+                    (self.analyze_exif(&path)?, name_result.1)
                 } else {
                     name_result
                 }
@@ -233,11 +270,13 @@ impl Analyzer<'_> {
         })
     }
 
-    fn compose_file_name(&self, date: &str, name: &str, dup: &str) -> Result<String> {
-        let patterns = &["{:date}", "{:name}", "{:dup}", "{:?dup}"];
-        let dup2 = if dup.len() > 0 { "_".to_string() + dup } else { "".to_string() };
-        let replacements = &[date, name, dup, dup2.as_str()];
+    fn compose_file_name(&self, date: &str, name: &str, dup: &str, ftype: &str) -> Result<String> {
+        let patterns = &["{:date}", "{:name}", "{:dup}", "{:?dup}", "{:type}", "{:?name}"];
+        let opt_dup = if dup.len() > 0 { "_".to_string() + dup } else { "".to_string() };
+        let opt_name = if name.len() > 0 { "_".to_string() + name } else { "".to_string() };
+        let replacements = &[date, name, dup, opt_dup.as_str(), ftype, opt_name.as_str()];
         let ac = AhoCorasick::new(patterns)?;
+
         // Replace all patterns at once to avoid being influenced by e.g. the file name
         Ok(ac.replace_all(self.settings.file_format.as_str(), replacements))
     }
@@ -269,8 +308,17 @@ impl Analyzer<'_> {
             Some(date) => date.format(&self.settings.date_format).to_string()
         };
 
+        let mut ftype = String::with_capacity(3);
+        if self.is_valid_photo_extension(path.extension())? {
+            ftype.push_str("IMG");
+        }
+        #[cfg(feature = "video")]
+        if self.is_valid_video_extension(path.extension())? {
+            ftype.push_str("MOV");
+        }
+
         let mut new_path = self.settings.target_dir.join(Path::new("")
-            .with_file_name(self.compose_file_name(date_string.as_str(), cleaned_name.as_str(), "")?)
+            .with_file_name(self.compose_file_name(date_string.as_str(), cleaned_name.as_str(), "", ftype.as_str())?)
             .with_extension(path.extension()
                 .ok_or(anyhow::anyhow!("No file extension"))?));
         let mut dup_counter = 0;
@@ -279,7 +327,7 @@ impl Analyzer<'_> {
             debug!("Target file already exists: {:?}", new_path);
             dup_counter += 1;
             new_path = self.settings.target_dir.join(Path::new("")
-                .with_file_name(self.compose_file_name(date_string.as_str(), cleaned_name.as_str(), &dup_counter.to_string())?)
+                .with_file_name(self.compose_file_name(date_string.as_str(), cleaned_name.as_str(), &dup_counter.to_string(), ftype.as_str())?)
                 .with_extension(path.extension()
                     .ok_or(anyhow::anyhow!("No file extension"))?));
         }
@@ -292,7 +340,7 @@ impl Analyzer<'_> {
         Ok(())
     }
 
-    fn is_valid_extension(&self, ext: Option<&OsStr>) -> Result<bool> {
+    fn is_valid_photo_extension(&self, ext: Option<&OsStr>) -> Result<bool> {
         match ext {
             None => Ok(false),
             Some(ext) => {
@@ -300,6 +348,26 @@ impl Analyzer<'_> {
                 Ok(self.settings.extensions.iter().any(|valid_ext| ext == valid_ext.as_str()))
             }
         }
+    }
+
+    #[cfg(feature = "video")]
+    fn is_valid_video_extension(&self, ext: Option<&OsStr>) -> Result<bool> {
+        match ext {
+            None => Ok(false),
+            Some(ext) => {
+                let ext = ext.to_str().ok_or(anyhow::anyhow!("Invalid file extension"))?.to_lowercase();
+                Ok(self.settings.video_extensions.iter().any(|valid_ext| ext == valid_ext.as_str()))
+            }
+        }
+    }
+
+    fn is_valid_extension(&self, ext: Option<&OsStr>) -> Result<bool> {
+        let valid_photo = self.is_valid_photo_extension(ext)?;
+        #[cfg(feature = "video")]
+        let valid_video = self.is_valid_video_extension(ext)?;
+        #[cfg(not(feature = "video"))]
+        let valid_video = false;
+        Ok(valid_photo || valid_video)
     }
 
     /// Executes the analyzer on a folder based on the `Analyzer`'s settings.
