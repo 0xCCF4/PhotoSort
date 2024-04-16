@@ -4,6 +4,12 @@ use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use regex;
 use anyhow::Result;
 use anyhow::anyhow;
+#[cfg(feature = "video")]
+use std::path::Path;
+#[cfg(feature = "video")]
+use std::sync::Mutex;
+#[cfg(feature = "video")]
+use ffmpeg_next as ffmpeg;
 
 /// This function retrieves the date and time from the EXIF data of a file.
 ///
@@ -34,6 +40,50 @@ pub fn get_exif_time(file: &File) -> Result<Option<NaiveDateTime>> {
         let datetime = field.display_value().to_string();
         NaiveDateTime::parse_from_str(&datetime, "%Y-%m-%d %H:%M:%S")
     }).transpose()?)
+}
+
+#[cfg(feature = "video")]
+static FFMPEG_INITIALIZED: Mutex<bool> = Mutex::new(false);
+#[cfg(feature = "video")]
+fn init_ffmpeg() -> Result<()> {
+    match FFMPEG_INITIALIZED.lock() {
+        Ok(mut guard) => {
+            if *guard {
+                return Ok(());
+            }
+            ffmpeg::init().map_err(|e| anyhow!("Error initializing ffmpeg: {:?}", e))?;
+            *guard = true;
+            Ok(())
+        },
+        Err(poisoned) => {
+            return Err(anyhow!("Mutex poisoned: {:?}", poisoned));
+        }
+    }
+}
+
+#[cfg(feature = "video")]
+/// This function retrieves the date and time from the video metadata.
+/// The function uses the `ffmpeg` crate to read the metadata from the video file.
+///
+/// # Arguments
+/// * `path` - A reference to a `Path` object.
+///
+/// # Returns
+/// * `Some(NaiveDateTime)` - If the date and time could be retrieved from the video metadata.
+/// * `None` - If there is no date and time in the video metadata.
+///
+/// # Errors
+/// This function will return an error if:
+/// * The video file could not be read.
+pub fn get_video_time<P: AsRef<Path> + ?Sized>(path: &P) -> Result<Option<NaiveDateTime>> {
+    init_ffmpeg()?;
+
+    let instance = ffmpeg::format::input(&path)?;
+
+    let result = instance.metadata().get("creation_time")
+        .map(|v| NaiveDateTime::parse_from_str(v, "%Y-%m-%dT%H:%M:%S%.f"));
+
+    Ok(result.transpose()?)
 }
 
 /// `NameTransformer` is a struct that represents a transformer to convert a file name into a `NaiveDateTime`.
