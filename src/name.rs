@@ -6,9 +6,9 @@ use regex::Regex;
 lazy_static! {
     /// Matches image names with optional prefixes and suffixes.
     ///
-    /// This regex matches image names that optionally start with "IMG", "img", "NO_DATE", or "no_date",
+    /// This regex matches image names that optionally start with "IMG", "img", "NO_DATE", or "no_date", "VID", "vid", "MOV", "mov",
     /// followed by any characters, and ending with a file extension.
-    static ref RE_IMAGE_NAME: Regex = Regex::new(r"^((IMG|img|NO_?DATE|no_?date)?[-_]*)*(.*?)[-_]*?\.([A-Za-z]+)$").expect("Failed to compile regex");
+    static ref RE_IMAGE_NAME: Regex = Regex::new(r"^((MOV|VID|mov|vid|IMG|img|NO_?DATE|no_?date)?[-_]*)*(.*?)[-_]*?\.([A-Za-z0-9]+)$").expect("Failed to compile regex");
 
     /// Matches and removes file extensions.
     ///

@@ -23,14 +23,20 @@ struct Arguments {
     #[arg(long, default_value = "%Y%m%d-%H%M%S")]
     date_format: String,
     /// The target file format. {:date} is replaced with the date and {:name} with the original file name.
+    /// {:?name} is replaced with _{:name} if a name is present
     /// {:dup} is replaced with a number if the file already exists.
     /// {:date} is replaced with the date and {:name} with the original file name.
     /// {:?dup} is replaced with _{:dup} if the file already exists.
-    #[arg(short, long, default_value = "IMG_{:date}_{:name}{:?dup}")]
+    /// {:type} is replaced with MOV or IMG.
+    #[arg(short, long, default_value = "{:type}_{:date}{:?name}{:?dup}")]
     file_format: String,
     /// A comma separated list of file extensions to include in the analysis.
-    #[arg(short, long, default_value = "jpg,jpeg,png", value_delimiter = ',', num_args = 0..)]
+    #[arg(short, long, default_value = "jpg,jpeg,png,tiff,heif,heic,avif,webp", value_delimiter = ',', num_args = 0..)]
     extensions: Vec<String>,
+    #[cfg(feature = "video")]
+    /// A comma separated list of video extensions to include in the analysis.
+    #[arg(long, default_value = "mp4,mov,avi", value_delimiter = ',', num_args = 0..)]
+    video_extensions: Vec<String>,
     /// The sorting mode, possible values are name_then_exif, exif_then_name, only_name, only_exif.
     /// Name analysis tries to extract the date from the file name, Exif analysis tries to extract the date from the EXIF data.
     #[arg(short, long, default_value = "exif_then_name")]
@@ -79,6 +85,8 @@ fn main() {
         date_format: args.date_format.clone(),
         extensions: args.extensions.clone(),
         action_type: if args.dry_run { action::ActionMode::DryRun } else { args.move_mode },
+        #[cfg(feature = "video")]
+        video_extensions: args.video_extensions.clone(),
     });
     let analyzer;
 

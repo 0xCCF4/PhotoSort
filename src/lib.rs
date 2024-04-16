@@ -1,124 +1,4 @@
-//! # PhotoSort
-//!
-//! PhotoSort is a robust command-line tool written in Rust, designed to streamline the organization of your photo collections.
-//! It works by sourcing images from a specified directory, extracting the date from either the file name or its EXIF data,
-//! and then moving or copying the file to a target directory. This process is fully customizable, allowing you to tailor the tool to your specific needs.
-//!
-//! ## Using the Library
-//!
-//! To use the PhotoSort library in your Rust project, you need to add it as a dependency in your `Cargo.toml` file:
-//!
-//! ```toml
-//! [dependencies]
-//! photo_sort = "0.1.4"
-//! ```
-//!
-//! Then, in your Rust code, you can import the `photo_sort` crate and use its functionality. Here's an example:
-//!
-//! ```rust
-//! use photo_sort::{Analyzer, AnalyzerSettings, AnalysisType, action::ActionMode};
-//! use std::path::Path;
-//!
-//! let settings = AnalyzerSettings {
-//!     use_standard_transformers: true,
-//!     analysis_type: AnalysisType::ExifThenName,
-//!     source_dirs: vec![Path::new("tests/src")],
-//!     target_dir: Path::new("tests/dst"),
-//!     recursive_source: false,
-//!     file_format: "IMG_{:date}_{:name}{:?dup}".to_string(),
-//!     date_format: "%Y%m%d-%H%M%S".to_string(),
-//!     extensions: vec!["jpg".to_string(), "jpeg".to_string(), "png".to_string()],
-//!     action_type: ActionMode::DryRun,
-//! };
-//!
-//! let analyzer = Analyzer::new(settings).unwrap();
-//! analyzer.run().unwrap();
-//! ```
-//!
-//! This will sort the photos in the `tests/src` directory, rename them based on their EXIF data and then move them to the `tests/dst` directory.
-//!
-//! ## Features
-//!
-//! - **Recursive Source Directory**: PhotoSort can search the source directories recursively. If the flag is not set, only immediate children of the source directories are considered.
-//! - **Custom Target Format**: You can define your own date and file formats for the renamed files. Use placeholders like `{:date}`, `{:name}`, and `{:dup}` to customize the file names.
-//! - **Analysis Mode**: Choose how you want to extract the date from your files. Options include `only_exif`, `only_name`, `name_then_exif`, and `exif_then_name`.
-//! - **Move Mode**: Choose how you want to organize your files. Options include `move`, `copy`, `hardlink`, `relative_symlink`, `absolute_symlink`.
-//! - **Dry Run Mode**: Test the tool without making any changes to your files. The tool will print the actions it would take without actually executing them.
-//!
-//! ## Usage
-//!
-//! To use PhotoSort binary, you need to pass in a set of arguments to define how you want to sort your photos. Here is an example:
-//!
-//! ```bash
-//! photo_sort \
-//!     --source_dir /path/to/photos \
-//!     --target_dir /path/to/sorted_photos \
-//!     --analysis_mode exif_then_name \
-//!     --move_mode move
-//! ```
-//!
-//! This command will sort the photos in the `/path/to/photos` directory, rename them based on their EXIF data and then move them to the `/path/to/sorted_photos` directory.
-//!
-//! For a full list of available options, run `photo_sort --help`:
-//! ```text
-//! $ photo_sort --help
-//!
-//! A tool to rename and sort photos by its EXIF date. It tries to extract the date
-//! from the EXIF data or file name and renames the image file according to a given
-//! format string.
-//!
-//! Foreach source directory all images are processed and renamed to the target directory
-//!
-//! Usage: photo_sort [OPTIONS] --source-dir <SOURCE_DIR>... --target-dir <TARGET_DIR>
-//!
-//! Options:
-//! -s, --source-dir <SOURCE_DIR>...     The source directory to read the photos from
-//! -t, --target-dir <TARGET_DIR>        The target directory to write the sorted photos to
-//! -r, --recursive                      Whether to search the source directories recursively. If the flag is not set only immediate children of the source directories are considered
-//! --date-format <DATE_FORMAT>      Date format string to use for the target directory. The format string is passed to the `chrono` crate's `format` method [default: %Y%m%d-%H%M%S]
-//! -f, --file-format <FILE_FORMAT>      The target file format. {:date} is replaced with the date and {:name} with the original file name. {:dup} is replaced with a number if the file already exists. {:date} is replaced with the date and {:name} with the original file name. {:?dup} is replaced with _{:dup} if the file already exists [default: IMG_{:date}_{:name}{:?dup}]
-//! -e, --extensions [<EXTENSIONS>...]   A comma separated list of file extensions to include in the analysis [default: jpg,jpeg,png]
-//! -a, --analysis-mode <ANALYSIS_MODE>  The sorting mode, possible values are name_then_exif, exif_then_name, only_name, only_exif. Name analysis tries to extract the date from the file name, Exif analysis tries to extract the date from the EXIF data [default: exif_then_name]
-//! -m, --move-mode <MOVE_MODE>          The action mode, possible values are move, copy, hardlink, relative_symlink, absolute_symlink. Move will move the files, Copy will copy the files, Hardlink (alias: hard) will create hardlinks, RelativeSymlink (alias: relsym) will create relative symlinks, AbsoluteSymlink (alias: abssym) will create absolute symlinks [default: move]
-//! -n, --dry-run                        Dry-run If set, the tool will not move any files but only print the actions it would take
-//! -v, --verbose                        Be verbose, if set, the tool will print more information about the actions it takes. Setting the RUST_LOG env var overrides this flag
-//! -d, --debug                          Debug, if set, the tool will print debug information (including debug implies setting verbose). Setting the RUST_LOG env var overrides this flag
-//! -h, --help                           Print help
-//! -V, --version                        Print version
-//! ```
-//!
-//! ## Installation
-//!
-//! To install PhotoSort, you need to have Cargo installed on your system.
-//!
-//! ```bash
-//! cargo install photo_sort
-//! ```
-//!
-//! or
-//!
-//! ```bash
-//! git clone https://github.com/username/photo_sort.git
-//! cd photo_sort
-//! cargo install --path .
-//! ```
-//!
-//! The `photo_sort` binary will then be available.
-//!
-//! ## Contributing
-//!
-//! Contributions to PhotoSort are welcome! If you have a feature request, bug report, or want to contribute to the code, please open an issue or a pull request.
-//!
-//! ## License
-//!
-//! PhotoSort is licensed under the GPLv3 license. See the LICENSE file for more details.
-//!
-//! ## Modules
-//!
-//! - [`analysis`](analysis/index.html) - Contains functions and structs for analyzing the EXIF data and file names.
-//! - [`name`](name/index.html) - Contains functions and structs for transforming file names.
-//! - [`action`](action/index.html) - Contains functions and structs for performing actions on files.
-//!
+#![doc = include_str!("../README.md")]
 
 use std::ffi::OsStr;
 use std::fs;
@@ -203,6 +83,8 @@ pub struct AnalyzerSettings<'a> {
     pub file_format: String,
     pub date_format: String,
     pub extensions: Vec<String>,
+    #[cfg(feature = "video")]
+    pub video_extensions: Vec<String>,
     pub action_type: ActionMode,
 }
 
@@ -288,9 +170,39 @@ impl Analyzer<'_> {
         }
     }
 
-    fn analyze_exif(&self, file: &File) -> Result<Option<NaiveDateTime>> {
+    fn analyze_photo_exif(&self, file: &File) -> Result<Option<NaiveDateTime>> {
         let exif_time = analysis::get_exif_time(file)?;
         Ok(exif_time)
+    }
+
+    #[cfg(feature = "video")]
+    fn analyze_video_metadata(&self, path: &PathBuf) -> Result<Option<NaiveDateTime>> {
+        let video_time = analysis::get_video_time(path)?;
+        Ok(video_time)
+    }
+
+    fn analyze_exif(&self, path: &PathBuf) -> Result<Option<NaiveDateTime>> {
+        #[cfg(feature = "video")]
+        let video = self.is_valid_video_extension(path.extension())?;
+        let photo = self.is_valid_photo_extension(path.extension())?;
+
+        #[cfg(feature = "video")]
+        {
+            if video && photo {
+                return Err(anyhow::anyhow!("File has both photo and video extensions. Do not include the same extension in both settings"));
+            }
+        }
+
+        if photo {
+            let file = File::open(path)?;
+            return self.analyze_photo_exif(&file);
+        }
+        #[cfg(feature = "video")]
+        if video {
+            return self.analyze_video_metadata(path);
+        }
+
+        Err(anyhow::anyhow!("File extension is not valid"))
     }
 
     /// Analyzes a file based on the `Analyzer`'s settings.
@@ -314,10 +226,17 @@ impl Analyzer<'_> {
     pub fn analyze(&self, path: &PathBuf) -> Result<(Option<NaiveDateTime>, String)> {
         let name = path.file_name().ok_or(anyhow::anyhow!("No file name"))?.to_str().ok_or(anyhow::anyhow!("Invalid file name"))?;
 
+        if !self.is_valid_extension(path.extension()).unwrap_or_else(|err| {
+            warn!("Error checking file extension: {}", err);
+            false
+        }) {
+            warn!("Skipping file with invalid extension: {:?}", path);
+            return Err(anyhow::anyhow!("Invalid file extension"));
+        }
+
         Ok(match self.settings.analysis_type {
             AnalysisType::OnlyExif => {
-                let file = File::open(&path)?;
-                let exif_result = self.analyze_exif(&file)?;
+                let exif_result = self.analyze_exif(&path)?;
                 let name_result = self.analyze_name(name);
 
                 match name_result {
@@ -329,8 +248,7 @@ impl Analyzer<'_> {
                 self.analyze_name(name)?
             },
             AnalysisType::ExifThenName => {
-                let file = File::open(&path)?;
-                let exif_result = self.analyze_exif(&file)?;
+                let exif_result = self.analyze_exif(&path)?;
                 let name_result = self.analyze_name(name);
 
                 match exif_result {
@@ -344,8 +262,7 @@ impl Analyzer<'_> {
             AnalysisType::NameThenExif => {
                 let name_result = self.analyze_name(name)?;
                 if name_result.0.is_none() {
-                    let file = File::open(&path)?;
-                    (self.analyze_exif(&file)?, name_result.1)
+                    (self.analyze_exif(&path)?, name_result.1)
                 } else {
                     name_result
                 }
@@ -353,11 +270,13 @@ impl Analyzer<'_> {
         })
     }
 
-    fn compose_file_name(&self, date: &str, name: &str, dup: &str) -> Result<String> {
-        let patterns = &["{:date}", "{:name}", "{:dup}", "{:?dup}"];
-        let dup2 = if dup.len() > 0 { "_".to_string() + dup } else { "".to_string() };
-        let replacements = &[date, name, dup, dup2.as_str()];
+    fn compose_file_name(&self, date: &str, name: &str, dup: &str, ftype: &str) -> Result<String> {
+        let patterns = &["{:date}", "{:name}", "{:dup}", "{:?dup}", "{:type}", "{:?name}"];
+        let opt_dup = if dup.len() > 0 { "_".to_string() + dup } else { "".to_string() };
+        let opt_name = if name.len() > 0 { "_".to_string() + name } else { "".to_string() };
+        let replacements = &[date, name, dup, opt_dup.as_str(), ftype, opt_name.as_str()];
         let ac = AhoCorasick::new(patterns)?;
+
         // Replace all patterns at once to avoid being influenced by e.g. the file name
         Ok(ac.replace_all(self.settings.file_format.as_str(), replacements))
     }
@@ -389,8 +308,17 @@ impl Analyzer<'_> {
             Some(date) => date.format(&self.settings.date_format).to_string()
         };
 
+        let mut ftype = String::with_capacity(3);
+        if self.is_valid_photo_extension(path.extension())? {
+            ftype.push_str("IMG");
+        }
+        #[cfg(feature = "video")]
+        if self.is_valid_video_extension(path.extension())? {
+            ftype.push_str("MOV");
+        }
+
         let mut new_path = self.settings.target_dir.join(Path::new("")
-            .with_file_name(self.compose_file_name(date_string.as_str(), cleaned_name.as_str(), "")?)
+            .with_file_name(self.compose_file_name(date_string.as_str(), cleaned_name.as_str(), "", ftype.as_str())?)
             .with_extension(path.extension()
                 .ok_or(anyhow::anyhow!("No file extension"))?));
         let mut dup_counter = 0;
@@ -399,7 +327,7 @@ impl Analyzer<'_> {
             debug!("Target file already exists: {:?}", new_path);
             dup_counter += 1;
             new_path = self.settings.target_dir.join(Path::new("")
-                .with_file_name(self.compose_file_name(date_string.as_str(), cleaned_name.as_str(), &dup_counter.to_string())?)
+                .with_file_name(self.compose_file_name(date_string.as_str(), cleaned_name.as_str(), &dup_counter.to_string(), ftype.as_str())?)
                 .with_extension(path.extension()
                     .ok_or(anyhow::anyhow!("No file extension"))?));
         }
@@ -412,7 +340,7 @@ impl Analyzer<'_> {
         Ok(())
     }
 
-    fn is_valid_extension(&self, ext: Option<&OsStr>) -> Result<bool> {
+    fn is_valid_photo_extension(&self, ext: Option<&OsStr>) -> Result<bool> {
         match ext {
             None => Ok(false),
             Some(ext) => {
@@ -420,6 +348,26 @@ impl Analyzer<'_> {
                 Ok(self.settings.extensions.iter().any(|valid_ext| ext == valid_ext.as_str()))
             }
         }
+    }
+
+    #[cfg(feature = "video")]
+    fn is_valid_video_extension(&self, ext: Option<&OsStr>) -> Result<bool> {
+        match ext {
+            None => Ok(false),
+            Some(ext) => {
+                let ext = ext.to_str().ok_or(anyhow::anyhow!("Invalid file extension"))?.to_lowercase();
+                Ok(self.settings.video_extensions.iter().any(|valid_ext| ext == valid_ext.as_str()))
+            }
+        }
+    }
+
+    fn is_valid_extension(&self, ext: Option<&OsStr>) -> Result<bool> {
+        let valid_photo = self.is_valid_photo_extension(ext)?;
+        #[cfg(feature = "video")]
+        let valid_video = self.is_valid_video_extension(ext)?;
+        #[cfg(not(feature = "video"))]
+        let valid_video = false;
+        Ok(valid_photo || valid_video)
     }
 
     /// Executes the analyzer on a folder based on the `Analyzer`'s settings.
