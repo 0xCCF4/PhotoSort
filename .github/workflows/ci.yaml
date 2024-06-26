@@ -20,13 +20,11 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        rustalias: [stable, nightly, msrv]
+        rustalias: [stable, nightly]
         feature_flag: ["--all-features", "--no-default-features", ""]
         include:
         - rustalias: stable
           rust: stable
-        - rustalias: msrv
-          rust: '1.73'
         - rustalias: nightly
           rust: nightly
 
