@@ -1,8 +1,8 @@
-use std::{fs};
-use std::path::PathBuf;
-use std::str::FromStr;
 use filetime::FileTime;
 use log::{debug, error, warn};
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 /// `ActionMode` is an enumeration that defines the different types of actions that can be performed on a file.
 ///
@@ -48,7 +48,7 @@ impl FromStr for ActionMode {
             "relsym" => Ok(ActionMode::RelativeSymlink), // Alias for "RelativeSymlink"
             "absolute_symlink" => Ok(ActionMode::AbsoluteSymlink),
             "abssym" => Ok(ActionMode::AbsoluteSymlink), // Alias for "AbsoluteSymlink"
-            _ => Err(anyhow::anyhow!("Invalid action mode"))
+            _ => Err(anyhow::anyhow!("Invalid action mode")),
         }
     }
 }
@@ -97,9 +97,12 @@ fn dry_run(source: &PathBuf, target: &PathBuf) -> std::io::Result<()> {
     Ok(())
 }
 
-fn error_file_exists(target: &PathBuf) -> std::io::Result<()> {
+fn error_file_exists(target: &Path) -> std::io::Result<()> {
     if target.exists() {
-        Err(std::io::Error::new(std::io::ErrorKind::AlreadyExists, "Target file already exists"))
+        Err(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            "Target file already exists",
+        ))
     } else {
         Ok(())
     }
@@ -113,7 +116,10 @@ fn copy_file(source: &PathBuf, target: &PathBuf) -> std::io::Result<()> {
 
     if metadata.len() != result {
         let _ = fs::remove_file(target);
-        return Err(std::io::Error::new(std::io::ErrorKind::Other, "File copy failed"));
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "File copy failed",
+        ));
     }
 
     let mtime = FileTime::from_last_modification_time(&metadata);
@@ -129,7 +135,10 @@ fn move_file(source: &PathBuf, target: &PathBuf) -> std::io::Result<()> {
 
     let result = fs::rename(source, target);
     if let Err(err) = result {
-        warn!("Renaming file failed, falling back to cut/paste: {:?} for file {:?} -> {:?}", err, source, target);
+        warn!(
+            "Renaming file failed, falling back to cut/paste: {:?} for file {:?} -> {:?}",
+            err, source, target
+        );
         copy_file(source, target)?;
         fs::remove_file(source)
     } else {
@@ -142,7 +151,10 @@ fn hardlink_file(source: &PathBuf, target: &PathBuf) -> std::io::Result<()> {
 
     let result = fs::hard_link(source, target);
     if let Err(_err) = result {
-        error!("Creating hardlink failed, falling back to copy: {:?} for file {:?} -> {:?}", _err, source, target);
+        error!(
+            "Creating hardlink failed, falling back to copy: {:?} for file {:?} -> {:?}",
+            _err, source, target
+        );
         copy_file(source, target)
     } else {
         Ok(())
@@ -161,5 +173,5 @@ fn absolute_symlink_file(source: &PathBuf, target: &PathBuf) -> std::io::Result<
     debug!("Creating symlink {:?} -> {:?}", source, target);
     let source = fs::canonicalize(source)?;
 
-    relative_symlink_file(&source, &target)
+    relative_symlink_file(&source, target)
 }

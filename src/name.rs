@@ -35,10 +35,14 @@ pub fn clean_image_name(name: &str) -> String {
     let caps = RE_IMAGE_NAME.captures(name);
     let result = match caps {
         None => RE_REMOVE_EXT.replace(name, "").to_string(),
-        Some(caps) => if let (Some(cap_name), Some(_cap_ext)) = (caps.get(3), caps.get(4)) {
-            RE_REMOVE_NODATE.replace(cap_name.as_str(), "").to_string()
-        } else {
-            RE_REMOVE_NODATE.replace(RE_REMOVE_EXT.replace(name, "").as_ref(), "").to_string()
+        Some(caps) => {
+            if let (Some(cap_name), Some(_cap_ext)) = (caps.get(3), caps.get(4)) {
+                RE_REMOVE_NODATE.replace(cap_name.as_str(), "").to_string()
+            } else {
+                RE_REMOVE_NODATE
+                    .replace(RE_REMOVE_EXT.replace(name, "").as_ref(), "")
+                    .to_string()
+            }
         }
     };
     debug!("Cleaned name: {:?} -> {:?}", name, result);
