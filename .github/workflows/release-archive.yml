@@ -1,3 +1,5 @@
+name: Auto publish artifacts
+
 on:
   release:
     types: [created]

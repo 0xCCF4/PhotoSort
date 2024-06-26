@@ -1,4 +1,4 @@
-name: Auto-merge PRs from trusted bots
+name: Auto-merge PRs from bots
 on: pull_request
 
 permissions:
@@ -21,4 +21,5 @@ jobs:
         run: gh pr merge --auto --merge "$PR_URL"
         env:
           PR_URL: ${{github.event.pull_request.html_url}}
-          GH_TOKEN: "${{ secrets.RELEASE_PLZ_PAT }}"
+          GH_TOKEN: ${{ github.token }}
+
