@@ -1,4 +1,4 @@
-name: Auto-merge PRs from trusted bots
+name: Auto-merge PRs from bots
 on: pull_request
 
 permissions:
