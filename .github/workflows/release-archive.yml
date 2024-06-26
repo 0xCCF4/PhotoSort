@@ -1,3 +1,5 @@
+name: Auto publish artifacts
+
 on:
   release:
     types: [created]
@@ -14,12 +16,20 @@ jobs:
             archive: zip
           - target: x86_64-unknown-linux-musl
             archive: tar.gz
+
     steps:
       - uses: actions/checkout@master
+      - uses: actions-rust-lang/setup-rust-toolchain@v1.8.0
+        with:
+          toolchain: "stable"
+          target: ${{ matrix.target }}
+
       - name: Build
         run: cargo build --verbose
+
       - name: Run tests
         run: cargo test --verbose
+
       - name: Compile and release
         uses: rust-build/rust-build.action@v1.4.4
         env:
@@ -28,6 +38,7 @@ jobs:
           RUSTTARGET: ${{ matrix.target }}
           ARCHIVE_TYPES: ${{ matrix.archive }}
           TOOLCHAIN_VERSION: stable
+
     permissions:
       contents: write
 
