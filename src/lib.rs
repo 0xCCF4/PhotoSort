@@ -1,20 +1,19 @@
 #![doc = include_str!("../README.md")]
 
+use action::ActionMode;
+use aho_corasick::AhoCorasick;
+use anyhow::{anyhow, Result};
+use chrono::NaiveDateTime;
+use log::{debug, error, info, warn};
 use std::ffi::OsStr;
 use std::fs;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use aho_corasick::AhoCorasick;
-use chrono::NaiveDateTime;
-use anyhow::{anyhow, Result};
-use log::{debug, error, info, warn};
-use action::ActionMode;
 
+pub mod action;
 pub mod analysis;
 pub mod name;
-pub mod action;
-
 
 /// `AnalysisType` is an enumeration that defines the different types of analysis that can be performed on a file.
 ///
@@ -55,7 +54,7 @@ impl FromStr for AnalysisType {
             "exif_name" => Ok(AnalysisType::ExifThenName),
             "name_then_exif" => Ok(AnalysisType::NameThenExif),
             "name_exif" => Ok(AnalysisType::NameThenExif),
-            _ => Err(anyhow::anyhow!("Invalid analysis type"))
+            _ => Err(anyhow::anyhow!("Invalid analysis type")),
         }
     }
 }
@@ -74,11 +73,11 @@ impl FromStr for AnalysisType {
 /// * `extensions` - A vector of strings that represent the file extensions to consider during analysis.
 /// * `action_type` - An `ActionMode` that specifies the type of action to perform on a file after analysis.
 #[derive(Debug, Clone)]
-pub struct AnalyzerSettings<'a> {
+pub struct AnalyzerSettings {
     pub use_standard_transformers: bool,
     pub analysis_type: AnalysisType,
-    pub source_dirs: Vec<&'a Path>,
-    pub target_dir: &'a Path,
+    pub source_dirs: Vec<PathBuf>,
+    pub target_dir: PathBuf,
     pub recursive_source: bool,
     pub file_format: String,
     pub date_format: String,
@@ -94,9 +93,9 @@ pub struct AnalyzerSettings<'a> {
 ///
 /// * `name_transformers` - A vector of `NameTransformer` objects that are used to transform the names of files during analysis.
 /// * `settings` - An `AnalyzerSettings` object that holds the settings for the `Analyzer`.
-pub struct Analyzer<'a> {
+pub struct Analyzer {
     name_transformers: Vec<analysis::NameTransformer>,
-    settings: AnalyzerSettings<'a>,
+    settings: AnalyzerSettings,
 }
 
 /// Implementation of methods for the `Analyzer` struct.
@@ -113,7 +112,7 @@ pub struct Analyzer<'a> {
 /// * [`is_valid_extension`](#method.is_valid_extension) - Checks if a file has a valid extension.
 /// * [`rename_files_in_folder`](#method.rename_files_in_folder) - Renames files in a folder based on the `Analyzer`'s settings.
 /// * [`run`](#method.run) - Runs the `Analyzer`, renaming files in the source directories based on the `Analyzer`'s settings.
-impl Analyzer<'_> {
+impl Analyzer {
     /// Creates a new `Analyzer` with the given settings.
     ///
     /// # Arguments
@@ -131,14 +130,16 @@ impl Analyzer<'_> {
     /// * If an error occurs while getting the standard name transformers.
     pub fn new(settings: AnalyzerSettings) -> Result<Analyzer> {
         let analyzer = Analyzer {
-            name_transformers: if settings.use_standard_transformers && (settings.analysis_type != AnalysisType::OnlyExif) {
+            name_transformers: if settings.use_standard_transformers
+                && (settings.analysis_type != AnalysisType::OnlyExif)
+            {
                 debug!("Using standard name transformers");
                 analysis::NameTransformer::get_standard_name_parsers()?
             } else {
                 debug!("Not using standard name transformers");
                 Vec::new()
             },
-            settings
+            settings,
         };
 
         if !analyzer.settings.target_dir.exists() {
@@ -166,7 +167,7 @@ impl Analyzer<'_> {
         let result = analysis::get_name_time(name, &self.name_transformers)?;
         match result {
             Some((time, name)) => Ok((Some(time), name)),
-            None => Ok((None, name.to_string()))
+            None => Ok((None, name.to_string())),
         }
     }
 
@@ -224,45 +225,50 @@ impl Analyzer<'_> {
     /// * The file cannot be opened.
     /// * An error occurs during the analysis of the file's Exif data or name.
     pub fn analyze(&self, path: &PathBuf) -> Result<(Option<NaiveDateTime>, String)> {
-        let name = path.file_name().ok_or(anyhow::anyhow!("No file name"))?.to_str().ok_or(anyhow::anyhow!("Invalid file name"))?;
+        let name = path
+            .file_name()
+            .ok_or(anyhow::anyhow!("No file name"))?
+            .to_str()
+            .ok_or(anyhow::anyhow!("Invalid file name"))?;
 
-        if !self.is_valid_extension(path.extension()).unwrap_or_else(|err| {
-            warn!("Error checking file extension: {}", err);
-            false
-        }) {
+        let valid_extension = self
+            .is_valid_extension(path.extension())
+            .unwrap_or_else(|err| {
+                warn!("Error checking file extension: {}", err);
+                false
+            });
+        if !valid_extension {
             warn!("Skipping file with invalid extension: {:?}", path);
             return Err(anyhow::anyhow!("Invalid file extension"));
         }
 
         Ok(match self.settings.analysis_type {
             AnalysisType::OnlyExif => {
-                let exif_result = self.analyze_exif(&path)?;
+                let exif_result = self.analyze_exif(path)?;
                 let name_result = self.analyze_name(name);
 
                 match name_result {
                     Ok((_, name)) => (exif_result, name),
-                    Err(_err) => (exif_result, name.to_string())
+                    Err(_err) => (exif_result, name.to_string()),
                 }
-            },
-            AnalysisType::OnlyName => {
-                self.analyze_name(name)?
-            },
+            }
+            AnalysisType::OnlyName => self.analyze_name(name)?,
             AnalysisType::ExifThenName => {
-                let exif_result = self.analyze_exif(&path)?;
+                let exif_result = self.analyze_exif(path)?;
                 let name_result = self.analyze_name(name);
 
                 match exif_result {
                     Some(date) => match name_result {
                         Ok((_, name)) => (Some(date), name),
-                        Err(_err) => (Some(date), name.to_string())
+                        Err(_err) => (Some(date), name.to_string()),
                     },
-                    None => name_result?
+                    None => name_result?,
                 }
-            },
+            }
             AnalysisType::NameThenExif => {
                 let name_result = self.analyze_name(name)?;
                 if name_result.0.is_none() {
-                    (self.analyze_exif(&path)?, name_result.1)
+                    (self.analyze_exif(path)?, name_result.1)
                 } else {
                     name_result
                 }
@@ -271,9 +277,19 @@ impl Analyzer<'_> {
     }
 
     fn compose_file_name(&self, date: &str, name: &str, dup: &str, ftype: &str) -> Result<String> {
-        let patterns = &["{:date}", "{:name}", "{:dup}", "{:?dup}", "{:type}", "{:?name}"];
-        let opt_dup = if dup.len() > 0 { "_".to_string() + dup } else { "".to_string() };
-        let opt_name = if name.len() > 0 { "_".to_string() + name } else { "".to_string() };
+        let patterns = &[
+            "{:date}", "{:name}", "{:dup}", "{:?dup}", "{:type}", "{:?name}",
+        ];
+        let opt_dup = if !dup.is_empty() {
+            "_".to_string() + dup
+        } else {
+            "".to_string()
+        };
+        let opt_name = if !name.is_empty() {
+            "_".to_string() + name
+        } else {
+            "".to_string()
+        };
         let replacements = &[date, name, dup, opt_dup.as_str(), ftype, opt_name.as_str()];
         let ac = AhoCorasick::new(patterns)?;
 
@@ -301,11 +317,14 @@ impl Analyzer<'_> {
         let (date, cleaned_name) = self.analyze(path)?;
         let cleaned_name = name::clean_image_name(cleaned_name.as_str());
 
-        debug!("Analysis results: Date: {:?}, Cleaned name: {:?}", date, cleaned_name);
+        debug!(
+            "Analysis results: Date: {:?}, Cleaned name: {:?}",
+            date, cleaned_name
+        );
 
         let date_string = match date {
             None => "NODATE".to_string(),
-            Some(date) => date.format(&self.settings.date_format).to_string()
+            Some(date) => date.format(&self.settings.date_format).to_string(),
         };
 
         let mut ftype = String::with_capacity(3);
@@ -317,19 +336,37 @@ impl Analyzer<'_> {
             ftype.push_str("MOV");
         }
 
-        let mut new_path = self.settings.target_dir.join(Path::new("")
-            .with_file_name(self.compose_file_name(date_string.as_str(), cleaned_name.as_str(), "", ftype.as_str())?)
-            .with_extension(path.extension()
-                .ok_or(anyhow::anyhow!("No file extension"))?));
+        let mut new_path = self.settings.target_dir.join(
+            Path::new("")
+                .with_file_name(self.compose_file_name(
+                    date_string.as_str(),
+                    cleaned_name.as_str(),
+                    "",
+                    ftype.as_str(),
+                )?)
+                .with_extension(
+                    path.extension()
+                        .ok_or(anyhow::anyhow!("No file extension"))?,
+                ),
+        );
         let mut dup_counter = 0;
 
         while new_path.exists() {
             debug!("Target file already exists: {:?}", new_path);
             dup_counter += 1;
-            new_path = self.settings.target_dir.join(Path::new("")
-                .with_file_name(self.compose_file_name(date_string.as_str(), cleaned_name.as_str(), &dup_counter.to_string(), ftype.as_str())?)
-                .with_extension(path.extension()
-                    .ok_or(anyhow::anyhow!("No file extension"))?));
+            new_path = self.settings.target_dir.join(
+                Path::new("")
+                    .with_file_name(self.compose_file_name(
+                        date_string.as_str(),
+                        cleaned_name.as_str(),
+                        &dup_counter.to_string(),
+                        ftype.as_str(),
+                    )?)
+                    .with_extension(
+                        path.extension()
+                            .ok_or(anyhow::anyhow!("No file extension"))?,
+                    ),
+            );
         }
 
         if dup_counter > 0 {
@@ -344,8 +381,15 @@ impl Analyzer<'_> {
         match ext {
             None => Ok(false),
             Some(ext) => {
-                let ext = ext.to_str().ok_or(anyhow::anyhow!("Invalid file extension"))?.to_lowercase();
-                Ok(self.settings.extensions.iter().any(|valid_ext| ext == valid_ext.as_str()))
+                let ext = ext
+                    .to_str()
+                    .ok_or(anyhow::anyhow!("Invalid file extension"))?
+                    .to_lowercase();
+                Ok(self
+                    .settings
+                    .extensions
+                    .iter()
+                    .any(|valid_ext| ext == valid_ext.as_str()))
             }
         }
     }
@@ -355,8 +399,15 @@ impl Analyzer<'_> {
         match ext {
             None => Ok(false),
             Some(ext) => {
-                let ext = ext.to_str().ok_or(anyhow::anyhow!("Invalid file extension"))?.to_lowercase();
-                Ok(self.settings.video_extensions.iter().any(|valid_ext| ext == valid_ext.as_str()))
+                let ext = ext
+                    .to_str()
+                    .ok_or(anyhow::anyhow!("Invalid file extension"))?
+                    .to_lowercase();
+                Ok(self
+                    .settings
+                    .video_extensions
+                    .iter()
+                    .any(|valid_ext| ext == valid_ext.as_str()))
             }
         }
     }
@@ -388,7 +439,12 @@ impl Analyzer<'_> {
     /// * The analysis of the file fails.
     /// * An IO error occurs while analyzing the date
     /// * An IO error occurs while doing the file action
-    pub fn process_files_in_folder(&self, root_source: &Path, target_path: &Path, recursive: bool) -> Result<()> {
+    pub fn process_files_in_folder(
+        &self,
+        root_source: &PathBuf,
+        _target_path: &PathBuf,
+        recursive: bool,
+    ) -> Result<()> {
         let entries = fs::read_dir(root_source)?;
         for entry in entries {
             let entry = entry?;
@@ -396,7 +452,7 @@ impl Analyzer<'_> {
             if path.is_dir() {
                 if recursive {
                     debug!("Processing subfolder: {:?}", path);
-                    self.process_files_in_folder(&path, target_path, recursive)?;
+                    self.process_files_in_folder(&path, _target_path, recursive)?;
                 }
             } else {
                 let valid_ext = self.is_valid_extension(path.extension());
@@ -408,7 +464,7 @@ impl Analyzer<'_> {
                         if let Err(err) = result {
                             error!("Error renaming file: {}", err);
                         }
-                    },
+                    }
                     Err(err) => {
                         warn!("Error checking file extension: {}", err);
                         continue;
@@ -436,8 +492,9 @@ impl Analyzer<'_> {
             info!("Processing source folder: {:?}", source);
             let result = self.process_files_in_folder(
                 source,
-                self.settings.target_dir,
-                self.settings.recursive_source);
+                &self.settings.target_dir,
+                self.settings.recursive_source,
+            );
             if let Err(err) = result {
                 eprintln!("Error processing folder: {}", err);
             }

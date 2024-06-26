@@ -1,8 +1,8 @@
-use std::{env};
-use std::path::{Path};
-use photo_sort::{action, AnalysisType, Analyzer};
 use clap::{arg, Parser};
 use log::{debug, LevelFilter};
+use photo_sort::{action, AnalysisType, Analyzer};
+use std::env;
+use std::path::PathBuf;
 
 /// A simple command line tool to sort photos by date.
 #[derive(Parser, Debug)]
@@ -78,35 +78,37 @@ fn main() {
     let result = Analyzer::new(photo_sort::AnalyzerSettings {
         use_standard_transformers: true,
         analysis_type: args.analysis_mode,
-        source_dirs: args.source_dir.iter().map(|x| Path::new(x)).collect(),
-        target_dir: Path::new(args.target_dir.as_str()),
+        source_dirs: args.source_dir.iter().map(PathBuf::from).collect(),
+        target_dir: PathBuf::from(args.target_dir.as_str()),
         recursive_source: args.recursive,
         file_format: args.file_format.clone(),
         date_format: args.date_format.clone(),
         extensions: args.extensions.clone(),
-        action_type: if args.dry_run { action::ActionMode::DryRun } else { args.move_mode },
+        action_type: if args.dry_run {
+            action::ActionMode::DryRun
+        } else {
+            args.move_mode
+        },
         #[cfg(feature = "video")]
         video_extensions: args.video_extensions.clone(),
     });
-    let analyzer;
-
-    match result {
+    let analyzer = match result {
         Ok(a) => {
             debug!("Program initialized");
-            analyzer = a;
-        },
+            a
+        }
         Err(e) => {
             eprintln!("{:?}", e);
             return;
         }
-    }
+    };
 
     debug!("Running program");
 
     match analyzer.run() {
         Ok(_) => {
             debug!("Program finished");
-        },
+        }
         Err(e) => {
             eprintln!("{:?}", e);
         }
