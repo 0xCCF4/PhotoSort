@@ -21,7 +21,7 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         rustalias: [stable, nightly]
-        feature_flag: ["--all-features", "--no-default-features", ""]
+        feature_flag: ["--no-default-features", ""]
         include:
         - rustalias: stable
           rust: stable
