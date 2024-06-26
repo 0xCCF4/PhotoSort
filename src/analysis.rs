@@ -1,15 +1,15 @@
-use std::fs::File;
-use exif;
-use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
-use regex;
-use anyhow::Result;
 use anyhow::anyhow;
+use anyhow::Result;
+use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
+use exif;
+#[cfg(feature = "video")]
+use ffmpeg_next as ffmpeg;
+use regex;
+use std::fs::File;
 #[cfg(feature = "video")]
 use std::path::Path;
 #[cfg(feature = "video")]
 use std::sync::Mutex;
-#[cfg(feature = "video")]
-use ffmpeg_next as ffmpeg;
 
 /// This function retrieves the date and time from the EXIF data of a file.
 ///
@@ -36,10 +36,12 @@ pub fn get_exif_time(file: &File) -> Result<Option<NaiveDateTime>> {
     let exif = exifreader.read_from_container(&mut bufreader)?;
     let datetime = exif.get_field(exif::Tag::DateTime, exif::In::PRIMARY);
 
-    Ok(datetime.map(|field| {
-        let datetime = field.display_value().to_string();
-        NaiveDateTime::parse_from_str(&datetime, "%Y-%m-%d %H:%M:%S")
-    }).transpose()?)
+    Ok(datetime
+        .map(|field| {
+            let datetime = field.display_value().to_string();
+            NaiveDateTime::parse_from_str(&datetime, "%Y-%m-%d %H:%M:%S")
+        })
+        .transpose()?)
 }
 
 #[cfg(feature = "video")]
@@ -54,7 +56,7 @@ fn init_ffmpeg() -> Result<()> {
             ffmpeg::init().map_err(|e| anyhow!("Error initializing ffmpeg: {:?}", e))?;
             *guard = true;
             Ok(())
-        },
+        }
         Err(poisoned) => {
             return Err(anyhow!("Mutex poisoned: {:?}", poisoned));
         }
@@ -80,7 +82,9 @@ pub fn get_video_time<P: AsRef<Path> + ?Sized>(path: &P) -> Result<Option<NaiveD
 
     let instance = ffmpeg::format::input(&path)?;
 
-    let result = instance.metadata().get("creation_time")
+    let result = instance
+        .metadata()
+        .get("creation_time")
         .map(|v| NaiveDateTime::parse_from_str(v, "%Y-%m-%dT%H:%M:%S%Z"));
 
     Ok(result.transpose()?)
@@ -110,11 +114,11 @@ impl NameTransformer {
     /// # Returns
     ///
     /// * `NameTransformer` - A new `NameTransformer` instance.
-    pub fn new(regex: regex::Regex, transform: fn(regex::Captures) -> Result<NaiveDateTime>) -> NameTransformer {
-        NameTransformer {
-            regex,
-            transform,
-        }
+    pub fn new(
+        regex: regex::Regex,
+        transform: fn(regex::Captures) -> Result<NaiveDateTime>,
+    ) -> NameTransformer {
+        NameTransformer { regex, transform }
     }
 
     /// This function generates a vector of `NameTransformer` instances.
@@ -136,24 +140,42 @@ impl NameTransformer {
     /// * The regular expression could not be compiled.
     pub fn get_standard_name_parsers() -> Result<Vec<NameTransformer>> {
         let p = NameTransformer {
-            regex: regex::Regex::new(r"(\d{4})[-_]?(\d{2})[-_]?(\d{2})(\D+(\d{2})[-_:]?(\d{2})[-_:]?(\d{2}))?[-_]?")?,
+            regex: regex::Regex::new(
+                r"(\d{4})[-_]?(\d{2})[-_]?(\d{2})(\D+(\d{2})[-_:]?(\d{2})[-_:]?(\d{2}))?[-_]?",
+            )?,
 
             transform: |m| {
-                let year = m.get(1).ok_or_else(|| anyhow!("Regex did not find year group"))?.as_str().parse::<i32>()?;
-                let month = m.get(2).ok_or_else(|| anyhow!("Regex did not find month group"))?.as_str().parse::<u32>()?;
-                let day = m.get(3).ok_or_else(|| anyhow!("Regex did not find day group"))?.as_str().parse::<u32>()?;
+                let year = m
+                    .get(1)
+                    .ok_or_else(|| anyhow!("Regex did not find year group"))?
+                    .as_str()
+                    .parse::<i32>()?;
+                let month = m
+                    .get(2)
+                    .ok_or_else(|| anyhow!("Regex did not find month group"))?
+                    .as_str()
+                    .parse::<u32>()?;
+                let day = m
+                    .get(3)
+                    .ok_or_else(|| anyhow!("Regex did not find day group"))?
+                    .as_str()
+                    .parse::<u32>()?;
 
-                let time = if let (Some(hour), Some(minute), Some(second)) = (m.get(5), m.get(6), m.get(7)) {
+                let time = if let (Some(hour), Some(minute), Some(second)) =
+                    (m.get(5), m.get(6), m.get(7))
+                {
                     NaiveTime::from_hms_opt(
                         hour.as_str().parse::<u32>()?,
                         minute.as_str().parse::<u32>()?,
                         second.as_str().parse::<u32>()?,
-                    ).ok_or_else(|| anyhow!("Invalid time"))?
+                    )
+                    .ok_or_else(|| anyhow!("Invalid time"))?
                 } else {
                     NaiveTime::MIN
                 };
 
-                let date = NaiveDate::from_ymd_opt(year, month, day).ok_or_else(|| anyhow!("Invalid date"))?;
+                let date = NaiveDate::from_ymd_opt(year, month, day)
+                    .ok_or_else(|| anyhow!("Invalid date"))?;
                 Ok(NaiveDateTime::new(date, time))
             },
         };
@@ -186,17 +208,19 @@ impl NameTransformer {
 /// This function will return an error if:
 ///
 /// * A transformation function failed and errors
-pub fn get_name_time(name: &str, parsers: &Vec<NameTransformer>) -> Result<Option<(NaiveDateTime, String)>> {
+pub fn get_name_time(
+    name: &str,
+    parsers: &Vec<NameTransformer>,
+) -> Result<Option<(NaiveDateTime, String)>> {
     for phrase in parsers {
         let iter = phrase.regex.captures_iter(name);
         for cap in iter {
             let matched = cap.get(0).map_or("", |m| m.as_str());
             match (phrase.transform)(cap) {
-                Ok(dt) => return Ok(Some(
-                    (dt, name.replace(matched, "")))),
+                Ok(dt) => return Ok(Some((dt, name.replace(matched, "")))),
                 Err(e) => {
                     log::error!("Error: {:?}", e);
-                },
+                }
             }
         }
     }

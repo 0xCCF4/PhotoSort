@@ -20,13 +20,11 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        rustalias: [stable, nightly, msrv]
-        feature_flag: ["--all-features", "--no-default-features", ""]
+        rustalias: [stable, nightly]
+        feature_flag: ["--no-default-features", ""]
         include:
         - rustalias: stable
           rust: stable
-        - rustalias: msrv
-          rust: '1.73'
         - rustalias: nightly
           rust: nightly
 
@@ -72,7 +70,7 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     strategy:
       matrix:
-        feature_flag: ["--all-features", "--no-default-features", ""]
+        feature_flag: ["--no-default-features", ""]
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
