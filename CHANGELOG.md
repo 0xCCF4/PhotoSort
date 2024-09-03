@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - change compile against stable in ci
 
 ### Other
+- *(deps)* bump actions-rust-lang/setup-rust-toolchain ([#12](https://github.com/0xCCF4/PhotoSort/pull/12))
 - *(deps)* bump rust-build/rust-build.action from 1.4.4 to 1.4.5 ([#13](https://github.com/0xCCF4/PhotoSort/pull/13))
 - renamed ci jobs
 - Bump clap from 4.5.4 to 4.5.7 ([#10](https://github.com/0xCCF4/PhotoSort/pull/10))
