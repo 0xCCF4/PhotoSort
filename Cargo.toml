@@ -21,15 +21,15 @@ documentation = "https://docs.rs/photo_sort"
 anyhow = "1.0.86"
 chrono = "0.4.34"
 kamadak-exif = "0.5.5"
-clap = { version = "4.5.7", features = ["derive"] }
-regex = "1.10.5"
+clap = { version = "4.5.16", features = ["derive"] }
+regex = "1.10.6"
 lazy_static = "1.5.0"
 aho-corasick = "1.1.2"
-env_logger = "0.11.2"
-log = "0.4.20"
-filetime = "0.2.23"
+env_logger = "0.11.5"
+log = "0.4.22"
+filetime = "0.2.25"
 symlink = "0.1.0"
-ffmpeg-next = { version = "7.0.2", optional = true }
+ffmpeg-next = { version = "7.0.4", optional = true }
 
 [features]
 default = []
