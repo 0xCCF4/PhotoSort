@@ -37,6 +37,9 @@ This command will sort the photos in the `/path/to/photos` directory, rename the
 then move
 them to the `/path/to/sorted_photos` directory.
 
+> You are not sure what the tool will do? Run it with the `--dry-run` flag to see what it would do without actually
+> changing anything.
+
 Another example:
 
 ```bash
@@ -124,6 +127,15 @@ cargo install --features video --path .
 
 Contributions to PhotoSort are welcome! If you have a feature request, bug report, or want to contribute to the code,
 please open an issue or a pull request.
+
+### Something works differently than expected?
+
+Try running the tool with the `RUST_LOG` environment variable set to `trace` to get more information about what the tool
+is doing and open an issue with the output.
+    
+```bash
+RUST_LOG=trace photo_sort --source_dir /path/to/photos --target_dir /path/to/sorted_photos
+```
 
 ## License
 
