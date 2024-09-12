@@ -94,7 +94,7 @@ pub struct AnalyzerSettings {
 /// * `name_transformers` - A vector of `NameTransformer` objects that are used to transform the names of files during analysis.
 /// * `settings` - An `AnalyzerSettings` object that holds the settings for the `Analyzer`.
 pub struct Analyzer {
-    name_transformers: Vec<analysis::NameTransformer>,
+    name_transformers: Vec<Box<dyn analysis::filename2date::FileNameToDateTransformer>>,
     settings: AnalyzerSettings,
 }
 
@@ -134,10 +134,12 @@ impl Analyzer {
                 && (settings.analysis_type != AnalysisType::OnlyExif)
             {
                 debug!("Using standard name transformers");
-                analysis::NameTransformer::get_standard_name_parsers()?
+                vec![Box::new(
+                    analysis::filename2date::NaiveFileNameParser::default(),
+                )]
             } else {
                 debug!("Not using standard name transformers");
-                Vec::new()
+                Vec::default()
             },
             settings,
         };
@@ -159,8 +161,11 @@ impl Analyzer {
     /// # Arguments
     ///
     /// * `transformer` - A `NameTransformer` object that is used to transform the names of files during analysis.
-    pub fn add_transformer(&mut self, transformer: analysis::NameTransformer) {
-        self.name_transformers.push(transformer);
+    pub fn add_transformer<T: 'static + analysis::filename2date::FileNameToDateTransformer>(
+        &mut self,
+        transformer: T,
+    ) {
+        self.name_transformers.push(Box::new(transformer));
     }
 
     fn analyze_name(&self, name: &str) -> Result<(Option<NaiveDateTime>, String)> {
@@ -172,13 +177,13 @@ impl Analyzer {
     }
 
     fn analyze_photo_exif(&self, file: &File) -> Result<Option<NaiveDateTime>> {
-        let exif_time = analysis::get_exif_time(file)?;
+        let exif_time = analysis::exif2date::get_exif_time(file)?;
         Ok(exif_time)
     }
 
     #[cfg(feature = "video")]
     fn analyze_video_metadata(&self, path: &PathBuf) -> Result<Option<NaiveDateTime>> {
-        let video_time = analysis::get_video_time(path)?;
+        let video_time = analysis::video2date::get_video_time(path)?;
         Ok(video_time)
     }
 
@@ -206,20 +211,17 @@ impl Analyzer {
         Err(anyhow::anyhow!("File extension is not valid"))
     }
 
-    /// Analyzes a file based on the `Analyzer`'s settings.
+    /// Analyzes a file for a date based on the `Analyzer`'s settings.
     ///
     /// # Arguments
-    ///
     /// * `path` - A `PathBuf` that represents the path of the file to analyze.
     ///
     /// # Returns
-    ///
     /// * `Result<(Option<NaiveDateTime>, String)>` - Returns a tuple containing an `Option<NaiveDateTime>` and a `String`.
     ///   The `Option<NaiveDateTime>` represents the date and time extracted from the file, if any.
     ///   The `String` represents the transformed name of the file.
     ///
     /// # Errors
-    ///
     /// This function will return an error if:
     /// * The file name cannot be retrieved or is invalid.
     /// * The file cannot be opened.
@@ -244,7 +246,9 @@ impl Analyzer {
 
         Ok(match self.settings.analysis_type {
             AnalysisType::OnlyExif => {
-                let exif_result = self.analyze_exif(path)?;
+                let exif_result = self
+                    .analyze_exif(path)
+                    .map_err(|e| anyhow!("Error analyzing Exif data: {}", e))?;
                 let name_result = self.analyze_name(name);
 
                 match name_result {
@@ -254,7 +258,15 @@ impl Analyzer {
             }
             AnalysisType::OnlyName => self.analyze_name(name)?,
             AnalysisType::ExifThenName => {
-                let exif_result = self.analyze_exif(path)?;
+                let exif_result = self.analyze_exif(path);
+                let exif_result = match exif_result {
+                    Err(e) => {
+                        warn!("Error analyzing Exif data: {} for {:?}", e, path);
+                        warn!("Falling back to name analysis");
+                        None
+                    }
+                    Ok(date) => date,
+                };
                 let name_result = self.analyze_name(name);
 
                 match exif_result {
@@ -313,8 +325,11 @@ impl Analyzer {
     /// * The analysis of the file fails.
     /// * An IO error occurs while analyzing the date
     /// * An IO error occurs while doing the file action
-    pub fn do_file_action(&self, path: &PathBuf) -> Result<()> {
-        let (date, cleaned_name) = self.analyze(path)?;
+    pub fn run_file(&self, path: &PathBuf) -> Result<()> {
+        let (date, cleaned_name) = self.analyze(path).map_err(|err| {
+            error!("Error extracting date: {}", err);
+            err
+        })?;
         let cleaned_name = name::clean_image_name(cleaned_name.as_str());
 
         debug!(
@@ -439,7 +454,7 @@ impl Analyzer {
     /// * The analysis of the file fails.
     /// * An IO error occurs while analyzing the date
     /// * An IO error occurs while doing the file action
-    pub fn process_files_in_folder(
+    pub fn run_files_in_folder(
         &self,
         root_source: &PathBuf,
         _target_path: &PathBuf,
@@ -452,15 +467,21 @@ impl Analyzer {
             if path.is_dir() {
                 if recursive {
                     debug!("Processing subfolder: {:?}", path);
-                    self.process_files_in_folder(&path, _target_path, recursive)?;
+                    self.run_files_in_folder(&path, _target_path, recursive)?;
                 }
             } else {
                 let valid_ext = self.is_valid_extension(path.extension());
                 match valid_ext {
-                    Ok(false) => continue,
+                    Ok(false) => {
+                        debug!(
+                            "Skipping file because extension is not in the list: {:?}",
+                            path
+                        );
+                        continue;
+                    }
                     Ok(true) => {
                         debug!("Processing file: {:?}", path);
-                        let result = self.do_file_action(&path);
+                        let result = self.run_file(&path);
                         if let Err(err) = result {
                             error!("Error renaming file: {}", err);
                         }
@@ -490,7 +511,7 @@ impl Analyzer {
     pub fn run(&self) -> Result<()> {
         for source in &self.settings.source_dirs {
             info!("Processing source folder: {:?}", source);
-            let result = self.process_files_in_folder(
+            let result = self.run_files_in_folder(
                 source,
                 &self.settings.target_dir,
                 self.settings.recursive_source,

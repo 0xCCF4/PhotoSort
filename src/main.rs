@@ -44,7 +44,7 @@ struct Arguments {
     /// The action mode, possible values are move, copy, hardlink, relative_symlink, absolute_symlink.
     /// Move will move the files, Copy will copy the files, Hardlink (alias: hard) will create hardlinks, RelativeSymlink (alias: relsym) will create relative symlinks, AbsoluteSymlink (alias: abssym) will create absolute symlinks.
     #[arg(short, long, default_value = "move")]
-    move_mode: action::ActionMode,
+    move_mode: action::ActualAction,
     /// Dry-run
     /// If set, the tool will not move any files but only print the actions it would take.
     #[arg(short = 'n', long, default_value = "false")]
@@ -85,9 +85,9 @@ fn main() {
         date_format: args.date_format.clone(),
         extensions: args.extensions.clone(),
         action_type: if args.dry_run {
-            action::ActionMode::DryRun
+            action::ActionMode::DryRun(args.move_mode)
         } else {
-            args.move_mode
+            action::ActionMode::Execute(args.move_mode)
         },
         #[cfg(feature = "video")]
         video_extensions: args.video_extensions.clone(),
