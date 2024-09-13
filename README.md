@@ -49,7 +49,8 @@ photo_sort \
   --target_dir /path/to/sorted_photos \
   --analysis-mode "exif_then_name" \
   --date-format "%Y-%m-%d-_%H%M%S" \
-  --file-format "{:date}{:?dup}" \
+  --file-format "{date?%Y}/{date}{_:dup}" \
+  --mkdir \
   --extensions "png,jpg" \
   --move-mode "hardlink"
 ```
@@ -57,33 +58,74 @@ photo_sort \
 This command will sort the photos in the `/path/to/photos` directory and its subdirectories, rename them based on their
 EXIF date (if not found then its name) and then hardlink them to the `/path/to/sorted_photos` directory.
 The files will be renamed to the format `YYYY-MM-DD_HHMMSS[_##]`, only `.png` and `.jpg` files will be processed.
+The files will be placed in subdirectories based on the year part of the extracted date. Subdirectories will be automatically
+created.
 
 For a full list of available options, run `photo_sort --help`:
 ```text
 $ photo_sort --help
 
-A tool to rename and sort photos by its EXIF date. It tries to extract the date
+A tool to rename and sort photos/videos by its EXIF date/metadata. It tries to extract the date
 from the EXIF data or file name and renames the image file according to a given
 format string.
-
-Foreach source directory all images are processed and renamed to the target directory
 
 Usage: photo_sort [OPTIONS] --source-dir <SOURCE_DIR>... --target-dir <TARGET_DIR>
 
 Options:
   -s, --source-dir <SOURCE_DIR>...     The source directory to read the photos from
+  
   -t, --target-dir <TARGET_DIR>        The target directory to write the sorted photos to
-  -r, --recursive                      Whether to search the source directories recursively. If the flag is not set only immediate children of the source directories are considered
-      --date-format <DATE_FORMAT>      Date format string to use for the target directory. The format string is passed to the `chrono` crate's `format` method [default: %Y%m%d-%H%M%S]
-  -f, --file-format <FILE_FORMAT>      The target file format. {:date} is replaced with the date and {:name} with the original file name. {:dup} is replaced with a number if the file already exists. {:date} is replaced with the date and {:name} with the original file name. {:?dup} is replaced with _{:dup} if the file already exists [default: IMG_{:date}_{:name}{:?dup}]
-  -e, --extensions [<EXTENSIONS>...]   A comma separated list of file extensions to include in the analysis [default: jpg,jpeg,png,tiff,heif,heic,avif,webp]
-  -a, --analysis-mode <ANALYSIS_MODE>  The sorting mode, possible values are name_then_exif, exif_then_name, only_name, only_exif. Name analysis tries to extract the date from the file name, Exif analysis tries to extract the date from the EXIF data [default: exif_then_name]
-  -m, --move-mode <MOVE_MODE>          The action mode, possible values are move, copy, hardlink, relative_symlink, absolute_symlink. Move will move the files, Copy will copy the files, Hardlink (alias: hard) will create hardlinks, RelativeSymlink (alias: relsym) will create relative symlinks, AbsoluteSymlink (alias: abssym) will create absolute symlinks [default: move]
+  
+  -r, --recursive                      Whether to search the source directories recursively. If the flag is not set only
+                                       immediate children of the source directories are considered
+                                       
+      --date-format <DATE_FORMAT>      Date format string to use as default date format. See [https://docs.rs/chrono/latest/chrono/format/strftime/index.html]
+                                       for more information [default: %Y%m%d-%H%M%S]
+                                       
+  -f, --file-format <FILE_FORMAT>      The target file format. Everything outside a {...} block is copied as is. The
+                                       target file format may contain "/" to indicate that the file should be placed in
+                                       a subdirectory. Use the `--mkdir` flag to create the subdirectories. `{name}` is
+                                       replaced with a filename without the date part. `{dup}` is replaced with a number
+                                       if a file with the target name already exists. `{date}` is replaced with the date
+                                       string, formatted according to the date_format parameter. `{date?format}` is
+                                       replaced with the date string, formatted according to the "format" parameter.
+                                       See [https://docs.rs/chrono/latest/chrono/format/strftime/index.html] for more
+                                       information. `{type}` is replaced with MOV or IMG. `{type?img,vid}` is replaced
+                                       with `img` if the file is an image, `vid` if the file is a video. Note that, when
+                                       using other types than IMG or MOV, and rerunning the program again, the custom
+                                       type will be seen as part of the file name. Commands of the form {label:cmd} are
+                                       replaced by {cmd}; if the replacement string is not empty then a prefix of "label"
+                                       is added. This might be useful to add separators only if there is e.g. a {dup}
+                                       part [default: {type}{_:date}{-:name}{-:dup}]
+                                       
+      --mkdir                          If the file format contains a "/", indicating that the file should be placed in a
+                                       subdirectory, the mkdir flag controls if the tool is allowed to create non-existing subdirectories. No folder is
+                                       created in dry-run mode
+                                       
+  -e, --extensions [<EXTENSIONS>...]   A comma separated list of file extensions to include in the analysis
+                                       [default: jpg,jpeg,png,tiff,heif,heic,avif,webp]
+                                       
+  -a, --analysis-mode <ANALYSIS_MODE>  The sorting mode, possible values are name_then_exif, exif_then_name, only_name,
+                                       only_exif. Name analysis tries to extract the date from the file name, Exif
+                                       analysis tries to extract the date from the EXIF data [default: exif_then_name]
+                                       
+  -m, --move-mode <MOVE_MODE>          The action mode, possible values are move, copy, hardlink, relative_symlink,
+                                       absolute_symlink. Move will move the files, Copy will copy the files, Hardlink
+                                       (alias: hard) will create hardlinks, RelativeSymlink (alias: relsym) will create
+                                       relative symlinks, AbsoluteSymlink (alias: abssym) will create absolute symlinks
+                                       [default: move]
+                                       
   -n, --dry-run                        Dry-run If set, the tool will not move any files but only print the actions it would take
-  -v, --verbose                        Be verbose, if set, the tool will print more information about the actions it takes. Setting the RUST_LOG env var overrides this flag
-  -d, --debug                          Debug, if set, the tool will print debug information (including debug implies setting verbose). Setting the RUST_LOG env var overrides this flag
+  
+  -v, --verbose                        Be verbose, if set, the tool will print more information about the actions it takes.
+                                       Setting the RUST_LOG env var overrides this flag
+                                       
+  -d, --debug                          Debug, if set, the tool will print debug information (including debug implies
+                                       setting verbose). Setting the RUST_LOG env var overrides this flag
+                                       
   -h, --help                           Print help
-  -V, --version                        Print version        
+  
+  -V, --version                        Print version 
   
 When building with video support enabled (see below):
       --video-extensions [<VIDEO_EXTENSIONS>...]  A comma separated list of video extensions to include in the analysis [default: mp4,mov,avi]                                                                                                                                                                 

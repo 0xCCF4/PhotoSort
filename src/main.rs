@@ -6,7 +6,9 @@ use std::path::PathBuf;
 
 /// A simple command line tool to sort photos by date.
 #[derive(Parser, Debug)]
-#[command(version, about, long_about = None)]
+#[command(version, about, long_about = "A tool to rename and sort photos/videos by its EXIF date/metadata. It tries to extract the date
+from the EXIF data or file name and renames the image file according to a given
+format string.")]
 struct Arguments {
     /// The source directory to read the photos from.
     #[arg(short, long, num_args = 1.., required = true)]
