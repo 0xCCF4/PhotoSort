@@ -36,5 +36,5 @@ jobs:
 
       - uses: actions/attest-build-provenance@v1
         with:
-          subject-path: ${{ github.workspace }}/target/release/backup-deduplicator
+          subject-path: ${{ github.workspace }}/target/release/photo_sort
         continue-on-error: true

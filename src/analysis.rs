@@ -1,5 +1,6 @@
 pub mod exif2date;
 pub mod filename2date;
+pub mod name_formatters;
 #[cfg(feature = "video")]
 pub mod video2date;
 

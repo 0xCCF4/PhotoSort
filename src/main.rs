@@ -18,17 +18,21 @@ struct Arguments {
     /// If the flag is not set only immediate children of the source directories are considered.
     #[arg(short, long, default_value = "false")]
     recursive: bool,
-    /// Date format string to use for the target directory.
-    /// The format string is passed to the `chrono` crate's `format` method.
+    /// Date format string to use as default date format.
+    /// See [https://docs.rs/chrono/latest/chrono/format/strftime/index.html] for more information.
     #[arg(long, default_value = "%Y%m%d-%H%M%S")]
     date_format: String,
-    /// The target file format. {:date} is replaced with the date and {:name} with the original file name.
-    /// {:?name} is replaced with _{:name} if a name is present
-    /// {:dup} is replaced with a number if the file already exists.
-    /// {:date} is replaced with the date and {:name} with the original file name.
-    /// {:?dup} is replaced with _{:dup} if the file already exists.
-    /// {:type} is replaced with MOV or IMG.
-    #[arg(short, long, default_value = "{:type}_{:date}{:?name}{:?dup}")]
+    /// The target file format. Everything outside a {...} block is copied as is.
+    /// {name} / {n} is replaced with a filename without the date part.
+    /// {dup} is replaced with a number if a file with the target name already exists.
+    /// {date} / {d} is replaced with the date string, formatted according to the date_format parameter.
+    /// {date?<format>} is replaced with the date string, formatted according to the <format> parameter. See [https://docs.rs/chrono/latest/chrono/format/strftime/index.html] for more information.
+    /// {type} / {t} is replaced with MOV or IMG.
+    /// {type?<img>,<vid>} is replaced with <img> if the file is an image, <vid> if the file is a video. Note that, when using other types than IMG or MOV,
+    /// and rerunning the program again, the custom type will be seen as part of the file name.
+    /// Commands of the form {label:cmd} are replaced by {cmd}; if the replacement string is not empty then a prefix of "label" is added.
+    /// This might be useful to add separators only if there is e.g. a {dup} part.
+    #[arg(short, long, default_value = "{type}{_:date}{-:name}{-:dup}")]
     file_format: String,
     /// A comma separated list of file extensions to include in the analysis.
     #[arg(short, long, default_value = "jpg,jpeg,png,tiff,heif,heic,avif,webp", value_delimiter = ',', num_args = 0..)]
@@ -76,7 +80,6 @@ fn main() {
     debug!("Initializing program");
 
     let result = Analyzer::new(photo_sort::AnalyzerSettings {
-        use_standard_transformers: true,
         analysis_type: args.analysis_mode,
         source_dirs: args.source_dir.iter().map(PathBuf::from).collect(),
         target_dir: PathBuf::from(args.target_dir.as_str()),
@@ -92,7 +95,7 @@ fn main() {
         #[cfg(feature = "video")]
         video_extensions: args.video_extensions.clone(),
     });
-    let analyzer = match result {
+    let mut analyzer = match result {
         Ok(a) => {
             debug!("Program initialized");
             a
@@ -102,6 +105,15 @@ fn main() {
             return;
         }
     };
+
+    // add file name -> date parsers
+    analyzer.add_transformer(photo_sort::analysis::filename2date::NaiveFileNameParser::default());
+
+    // add date -> file name formatters
+    analyzer.add_formatter(photo_sort::analysis::name_formatters::FormatName::default());
+    analyzer.add_formatter(photo_sort::analysis::name_formatters::FormatDuplicate::default());
+    analyzer.add_formatter(photo_sort::analysis::name_formatters::FormatDate::default());
+    analyzer.add_formatter(photo_sort::analysis::name_formatters::FormatFileType::default());
 
     debug!("Running program");
 
