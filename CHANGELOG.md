@@ -6,6 +6,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/0xCCF4/PhotoSort/compare/v0.1.6...v0.2.0) - 2024-09-13
+
+### Added
+
+- allow specifying a format string that allows subfolder creation [#33](https://github.com/0xCCF4/PhotoSort/pull/33)
+- [**breaking**] overhauled file format interface
+
+### Fixed
+
+- *(doc)* fixed README.md examples
+
+### Other
+
+- *(doc)* cargo fmt
+- updated readme to reflect the new cli options
+- [**breaking**] moved parts of the source to own files, added more debug/error information
+- Merge pull request [#32](https://github.com/0xCCF4/PhotoSort/pull/32) from 0xCCF4/dependabot/cargo/anyhow-1.0.87
+- *(deps)* bump anyhow from 1.0.86 to 1.0.87
+
 ## [0.1.6](https://github.com/0xCCF4/PhotoSort/compare/v0.1.5...v0.1.6) - 2024-06-26
 
 ### Added
