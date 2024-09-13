@@ -1,9 +1,10 @@
 #![doc = include_str!("../README.md")]
 
+use crate::analysis::name_formatters::{FileType, NameFormatterInvocationInfo};
 use action::ActionMode;
-use aho_corasick::AhoCorasick;
 use anyhow::{anyhow, Result};
 use chrono::NaiveDateTime;
+use lazy_static::lazy_static;
 use log::{debug, error, info, warn};
 use std::ffi::OsStr;
 use std::fs;
@@ -62,8 +63,6 @@ impl FromStr for AnalysisType {
 /// `AnalyzerSettings` is a struct that holds the settings for an `Analyzer`.
 ///
 /// # Fields
-///
-/// * `use_standard_transformers` - A boolean that indicates whether to use standard name transformers.
 /// * `analysis_type` - An `AnalysisType` that specifies the type of analysis to perform on a file.
 /// * `source_dirs` - A vector of `Path` references that represent the source directories to analyze.
 /// * `target_dir` - A `Path` reference that represents the target directory for the analysis results.
@@ -74,7 +73,6 @@ impl FromStr for AnalysisType {
 /// * `action_type` - An `ActionMode` that specifies the type of action to perform on a file after analysis.
 #[derive(Debug, Clone)]
 pub struct AnalyzerSettings {
-    pub use_standard_transformers: bool,
     pub analysis_type: AnalysisType,
     pub source_dirs: Vec<PathBuf>,
     pub target_dir: PathBuf,
@@ -87,14 +85,26 @@ pub struct AnalyzerSettings {
     pub action_type: ActionMode,
 }
 
+lazy_static! {
+    static ref RE_DETECT_NAME_FORMAT_COMMAND: regex::Regex = regex::Regex::new(
+        r"\{([^\}]*)\}" // finds { ... } blocks
+    ).expect("Failed to compile regex");
+
+    static ref RE_COMMAND_SPLIT: regex::Regex = regex::Regex::new(
+        r"^(([^:]*):)?(.*)$" // splits command into modifiers:command
+    ).expect("Failed to compile regex");
+}
+
 /// `Analyzer` is a struct that represents an analyzer for files.
 ///
 /// # Fields
 ///
-/// * `name_transformers` - A vector of `NameTransformer` objects that are used to transform the names of files during analysis.
+/// * `name_transformers` - A list of `NameTransformer` objects that are used to transform the names of files during analysis.
+/// * `name_formatters` - A list of `NameFormatter` objects that are used to generate the new names of files after analysis.
 /// * `settings` - An `AnalyzerSettings` object that holds the settings for the `Analyzer`.
 pub struct Analyzer {
     name_transformers: Vec<Box<dyn analysis::filename2date::FileNameToDateTransformer>>,
+    name_formatters: Vec<Box<dyn analysis::name_formatters::NameFormatter>>,
     settings: AnalyzerSettings,
 }
 
@@ -130,17 +140,8 @@ impl Analyzer {
     /// * If an error occurs while getting the standard name transformers.
     pub fn new(settings: AnalyzerSettings) -> Result<Analyzer> {
         let analyzer = Analyzer {
-            name_transformers: if settings.use_standard_transformers
-                && (settings.analysis_type != AnalysisType::OnlyExif)
-            {
-                debug!("Using standard name transformers");
-                vec![Box::new(
-                    analysis::filename2date::NaiveFileNameParser::default(),
-                )]
-            } else {
-                debug!("Not using standard name transformers");
-                Vec::default()
-            },
+            name_transformers: Vec::default(),
+            name_formatters: Vec::default(),
             settings,
         };
 
@@ -159,13 +160,23 @@ impl Analyzer {
     /// Adds a name transformer to the `Analyzer`.
     ///
     /// # Arguments
-    ///
     /// * `transformer` - A `NameTransformer` object that is used to transform the names of files during analysis.
     pub fn add_transformer<T: 'static + analysis::filename2date::FileNameToDateTransformer>(
         &mut self,
         transformer: T,
     ) {
         self.name_transformers.push(Box::new(transformer));
+    }
+
+    /// Adds a name formatter to the `Analyzer`.
+    ///
+    /// # Arguments
+    /// * `formatter` - A `NameFormatter` object that is used to generate the new names of files after analysis.
+    pub fn add_formatter<T: 'static + analysis::name_formatters::NameFormatter>(
+        &mut self,
+        formatter: T,
+    ) {
+        self.name_formatters.push(Box::new(formatter));
     }
 
     fn analyze_name(&self, name: &str) -> Result<(Option<NaiveDateTime>, String)> {
@@ -288,25 +299,115 @@ impl Analyzer {
         })
     }
 
-    fn compose_file_name(&self, date: &str, name: &str, dup: &str, ftype: &str) -> Result<String> {
-        let patterns = &[
-            "{:date}", "{:name}", "{:dup}", "{:?dup}", "{:type}", "{:?name}",
-        ];
-        let opt_dup = if !dup.is_empty() {
-            "_".to_string() + dup
-        } else {
-            "".to_string()
-        };
-        let opt_name = if !name.is_empty() {
-            "_".to_string() + name
-        } else {
-            "".to_string()
-        };
-        let replacements = &[date, name, dup, opt_dup.as_str(), ftype, opt_name.as_str()];
-        let ac = AhoCorasick::new(patterns)?;
+    /// Replaces {name}, {date}, ... in a format with actual values
+    fn replace_filepath_parts<'a, 'b>(
+        &self,
+        format_string: &'b str,
+        info: &'a NameFormatterInvocationInfo,
+    ) -> Result<String> {
+        let detect_commands = RE_DETECT_NAME_FORMAT_COMMAND.captures_iter(format_string);
 
-        // Replace all patterns at once to avoid being influenced by e.g. the file name
-        Ok(ac.replace_all(self.settings.file_format.as_str(), replacements))
+        #[derive(Debug)]
+        enum FormatString<'a> {
+            Literal(String),
+            Command(&'a str, String),
+        }
+        impl<'a> FormatString<'a> {
+            fn formatted_string(self) -> String {
+                match self {
+                    FormatString::Literal(str) => str,
+                    FormatString::Command(_, str) => str,
+                }
+            }
+        }
+
+        let mut final_string: Vec<FormatString<'b>> = Vec::new();
+
+        let mut current_string_index = 0;
+        for capture in detect_commands {
+            let match_all = capture.get(0).expect("Capture group 0 should always exist");
+            let start = match_all.start();
+            let end = match_all.end();
+
+            if start > current_string_index {
+                final_string.push(FormatString::Literal(
+                    format_string[current_string_index..start].to_string(),
+                ));
+            }
+
+            // {prefix:cmd}
+            // let full_match_string = match_all.as_str();
+            // prefix:cmd
+            let inner_command_string = capture
+                .get(1)
+                .expect("Capture group 2 should always exist")
+                .as_str();
+
+            let inner_command_capture = RE_COMMAND_SPLIT
+                .captures(inner_command_string)
+                .expect("Should always match");
+
+            // prefix
+            let command_modifier = inner_command_capture
+                .get(2)
+                .map(|x| x.as_str())
+                .unwrap_or("");
+            // cmd
+            let actual_command = inner_command_capture
+                .get(3)
+                .map(|x| x.as_str())
+                .unwrap_or("");
+
+            let mut found_command = false;
+
+            for formatter in &self.name_formatters {
+                if let Some(matched) = formatter.argument_template().captures(actual_command) {
+                    let mut command_substitution = match formatter.replacement_text(matched, info) {
+                        Ok(replaced_text) => replaced_text,
+                        Err(err) => {
+                            return Err(anyhow!("Failed to format the file name with the given format string: {:?}. Got error: {{{}}}", actual_command, err));
+                        }
+                    };
+
+                    if !command_substitution.is_empty() && !command_modifier.is_empty() {
+                        // prefix_substitution
+                        command_substitution =
+                            format!("{}{}", command_modifier, command_substitution);
+                    }
+                    found_command = true;
+                    final_string.push(FormatString::Command(
+                        inner_command_string,
+                        command_substitution,
+                    ));
+                    break;
+                }
+            }
+
+            if !found_command {
+                return Err(anyhow!("Failed to format file name with the given format string. There exists no formatter for the format command: {{{}}}", actual_command));
+            }
+
+            current_string_index = end;
+        }
+        if format_string.len() > current_string_index {
+            final_string.push(FormatString::Literal(
+                format_string[current_string_index..].to_string(),
+            ));
+        }
+
+        debug!("Parsed format string {:?} to", format_string);
+        for part in &final_string {
+            match part {
+                FormatString::Literal(str) => debug!(" - Literal: {:?}", str),
+                FormatString::Command(cmd, str) => debug!(" - Command: {:?}\t{:?}", cmd, str),
+            }
+        }
+
+        Ok(final_string
+            .into_iter()
+            .map(|v| v.formatted_string())
+            .collect::<Vec<_>>()
+            .join(""))
     }
 
     /// Performs the file action specified in the `Analyzer`'s settings on a file.
@@ -342,50 +443,47 @@ impl Analyzer {
             Some(date) => date.format(&self.settings.date_format).to_string(),
         };
 
-        let mut ftype = String::with_capacity(3);
+        let mut ftype = FileType::None;
         if self.is_valid_photo_extension(path.extension())? {
-            ftype.push_str("IMG");
+            ftype = FileType::Image;
         }
         #[cfg(feature = "video")]
         if self.is_valid_video_extension(path.extension())? {
-            ftype.push_str("MOV");
+            ftype = FileType::Video
         }
 
-        let mut new_path = self.settings.target_dir.join(
-            Path::new("")
-                .with_file_name(self.compose_file_name(
-                    date_string.as_str(),
-                    cleaned_name.as_str(),
-                    "",
-                    ftype.as_str(),
-                )?)
-                .with_extension(
-                    path.extension()
-                        .ok_or(anyhow::anyhow!("No file extension"))?,
-                ),
-        );
+        let mut file_name_info = NameFormatterInvocationInfo {
+            date: &date,
+            date_string: &date_string,
+            date_default_format: &self.settings.date_format,
+            file_type: &ftype,
+            cleaned_name: &cleaned_name,
+            duplicate_counter: None,
+        };
+
+        let new_file_path = |file_name_info: &NameFormatterInvocationInfo| -> Result<PathBuf> {
+            self.replace_filepath_parts(self.settings.file_format.as_str(), file_name_info)
+                .map(|target_name| {
+                    self.settings.target_dir.join(
+                        Path::new("").with_file_name(target_name).with_extension(
+                            path.extension().expect("There should be an extension"),
+                        ),
+                    )
+                })
+        };
+
+        let mut new_path = new_file_path(&file_name_info)?;
         let mut dup_counter = 0;
 
         while new_path.exists() {
             debug!("Target file already exists: {:?}", new_path);
             dup_counter += 1;
-            new_path = self.settings.target_dir.join(
-                Path::new("")
-                    .with_file_name(self.compose_file_name(
-                        date_string.as_str(),
-                        cleaned_name.as_str(),
-                        &dup_counter.to_string(),
-                        ftype.as_str(),
-                    )?)
-                    .with_extension(
-                        path.extension()
-                            .ok_or(anyhow::anyhow!("No file extension"))?,
-                    ),
-            );
+            file_name_info.duplicate_counter = Some(dup_counter);
+            new_path = new_file_path(&file_name_info)?;
         }
 
         if dup_counter > 0 {
-            info!("De-deplicated target file: {:?}", new_path);
+            info!("De-duplicated target file: {:?}", new_path);
         }
 
         action::file_action(path, &new_path, &self.settings.action_type)?;
