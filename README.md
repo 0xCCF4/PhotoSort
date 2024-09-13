@@ -29,8 +29,8 @@ To use PhotoSort, you need to pass in a set of arguments to define how you want 
 
 ```bash
 photo_sort \
-  --source_dir /path/to/photos \
-  --target_dir /path/to/sorted_photos
+  --source-dir /path/to/photos \
+  --target-dir /path/to/sorted_photos
 ```
 
 This command will sort the photos in the `/path/to/photos` directory, rename them based on their EXIF data or name and
@@ -46,7 +46,7 @@ Another example:
 photo_sort \
   --source_dir /path/to/photos \
   --recursive \
-  --target_dir /path/to/sorted_photos \
+  --target-dir /path/to/sorted_photos \
   --analysis-mode "exif_then_name" \
   --date-format "%Y-%m-%d-_%H%M%S" \
   --file-format "{date?%Y}/{date}{_:dup}" \
@@ -157,7 +157,7 @@ dependencies, you can install the `photo_sort` binary with the `video` feature e
 cargo install --features video photo_sort
 ```
 
-or 
+or
 
 ```bash
 git clone https://github.com/0xCCF4/photo_sort.git
@@ -174,7 +174,7 @@ please open an issue or a pull request.
 
 Try running the tool with the `RUST_LOG` environment variable set to `trace` to get more information about what the tool
 is doing and open an issue with the output.
-    
+
 ```bash
 RUST_LOG=trace photo_sort --source_dir /path/to/photos --target_dir /path/to/sorted_photos
 ```
