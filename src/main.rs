@@ -22,18 +22,23 @@ struct Arguments {
     /// See [https://docs.rs/chrono/latest/chrono/format/strftime/index.html] for more information.
     #[arg(long, default_value = "%Y%m%d-%H%M%S")]
     date_format: String,
-    /// The target file format. Everything outside a {...} block is copied as is.
-    /// {name} / {n} is replaced with a filename without the date part.
-    /// {dup} is replaced with a number if a file with the target name already exists.
-    /// {date} / {d} is replaced with the date string, formatted according to the date_format parameter.
-    /// {date?<format>} is replaced with the date string, formatted according to the <format> parameter. See [https://docs.rs/chrono/latest/chrono/format/strftime/index.html] for more information.
-    /// {type} / {t} is replaced with MOV or IMG.
-    /// {type?<img>,<vid>} is replaced with <img> if the file is an image, <vid> if the file is a video. Note that, when using other types than IMG or MOV,
+    /// The target file format. Everything outside a {...} block is copied as is. The target file format may contain "/" to
+    /// indicate that the file should be placed in a subdirectory. Use the `--mkdir` flag to create the subdirectories.
+    /// `{name}` is replaced with a filename without the date part.
+    /// `{dup}` is replaced with a number if a file with the target name already exists.
+    /// `{date}` is replaced with the date string, formatted according to the date_format parameter.
+    /// `{date?format}` is replaced with the date string, formatted according to the "format" parameter. See [https://docs.rs/chrono/latest/chrono/format/strftime/index.html] for more information.
+    /// `{type}` is replaced with MOV or IMG.
+    /// `{type?img,vid}` is replaced with `img` if the file is an image, `vid` if the file is a video. Note that, when using other types than IMG or MOV,
     /// and rerunning the program again, the custom type will be seen as part of the file name.
     /// Commands of the form {label:cmd} are replaced by {cmd}; if the replacement string is not empty then a prefix of "label" is added.
     /// This might be useful to add separators only if there is e.g. a {dup} part.
     #[arg(short, long, default_value = "{type}{_:date}{-:name}{-:dup}")]
     file_format: String,
+    /// If the file format contains a "/", indicating that the file should be placed in a subdirectory,
+    /// the mkdir flag controls if the tool is allowed to create non-existing subdirectories. No folder is created in dry-run mode.
+    #[arg(long, default_value = "false", alias = "mkdirs")]
+    mkdir: bool,
     /// A comma separated list of file extensions to include in the analysis.
     #[arg(short, long, default_value = "jpg,jpeg,png,tiff,heif,heic,avif,webp", value_delimiter = ',', num_args = 0..)]
     extensions: Vec<String>,
@@ -87,6 +92,7 @@ fn main() {
         file_format: args.file_format.clone(),
         date_format: args.date_format.clone(),
         extensions: args.extensions.clone(),
+        mkdir: args.mkdir,
         action_type: if args.dry_run {
             action::ActionMode::DryRun(args.move_mode)
         } else {

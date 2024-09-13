@@ -9,7 +9,7 @@ use log::{debug, error, info, warn};
 use std::ffi::OsStr;
 use std::fs;
 use std::fs::File;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::str::FromStr;
 
 pub mod action;
@@ -71,6 +71,7 @@ impl FromStr for AnalysisType {
 /// * `date_format` - A string that represents the format of the dates in the files to analyze.
 /// * `extensions` - A vector of strings that represent the file extensions to consider during analysis.
 /// * `action_type` - An `ActionMode` that specifies the type of action to perform on a file after analysis.
+/// * `mkdir` - A boolean that indicates whether to create the target directory if it does not exist.
 #[derive(Debug, Clone)]
 pub struct AnalyzerSettings {
     pub analysis_type: AnalysisType,
@@ -83,6 +84,7 @@ pub struct AnalyzerSettings {
     #[cfg(feature = "video")]
     pub video_extensions: Vec<String>,
     pub action_type: ActionMode,
+    pub mkdir: bool,
 }
 
 lazy_static! {
@@ -462,14 +464,27 @@ impl Analyzer {
         };
 
         let new_file_path = |file_name_info: &NameFormatterInvocationInfo| -> Result<PathBuf> {
-            self.replace_filepath_parts(self.settings.file_format.as_str(), file_name_info)
-                .map(|target_name| {
-                    self.settings.target_dir.join(
-                        Path::new("").with_file_name(target_name).with_extension(
-                            path.extension().expect("There should be an extension"),
-                        ),
-                    )
-                })
+            let path_split: Vec<_> = self
+                .settings
+                .file_format
+                .split('/')
+                .map(|component| self.replace_filepath_parts(component, file_name_info))
+                .collect();
+            for entry in &path_split {
+                if let Err(err) = entry {
+                    return Err(anyhow!("Failed to format filename: {}", err));
+                }
+            }
+            let path_split = path_split.into_iter().map(Result::unwrap);
+
+            let mut target_path = self.settings.target_dir.clone();
+            for path_component in path_split {
+                let component = path_component.replace("/", "").replace("\\", "");
+                if component != ".." {
+                    target_path.push(component);
+                }
+            }
+            Ok(target_path.with_extension(path.extension().expect("There should be an extension")))
         };
 
         let mut new_path = new_file_path(&file_name_info)?;
@@ -486,7 +501,12 @@ impl Analyzer {
             info!("De-duplicated target file: {:?}", new_path);
         }
 
-        action::file_action(path, &new_path, &self.settings.action_type)?;
+        action::file_action(
+            path,
+            &new_path,
+            &self.settings.action_type,
+            self.settings.mkdir,
+        )?;
         Ok(())
     }
 
