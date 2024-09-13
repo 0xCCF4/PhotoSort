@@ -1,3 +1,4 @@
+use anyhow::{anyhow, Result};
 use filetime::FileTime;
 use log::{debug, error, warn};
 use std::fmt::{Display, Formatter};
@@ -82,6 +83,7 @@ impl FromStr for ActualAction {
 /// * `source` - A PathBuf reference to the source file.
 /// * `target` - A PathBuf reference to the target file.
 /// * `action` - An ActionMode reference specifying the action to be performed.
+/// * `mkdir` - Mkdir subfolders on the way, in dry-run mode no subfolders are created.
 ///
 /// # Returns
 ///
@@ -103,15 +105,47 @@ impl FromStr for ActualAction {
 ///
 /// * The target file already exists.
 /// * An error occurred during the file operation.
-pub fn file_action(source: &PathBuf, target: &PathBuf, action: &ActionMode) -> std::io::Result<()> {
-    error_file_exists(target)?;
-    match action {
+pub fn file_action(
+    source: &PathBuf,
+    target: &PathBuf,
+    action: &ActionMode,
+    mkdir: bool,
+) -> Result<()> {
+    error_file_exists(target)
+        .map_err(|e| anyhow!("Target file already exists: {:?} - {:?}", target, e))?;
+
+    // check if parent folder exists
+    if let Some(parent) = target.parent() {
+        if !parent.exists() {
+            if !mkdir {
+                return Err(anyhow!(
+                    "Target subfolder does not exist. Use --mkdir to create it: {:?}",
+                    parent
+                ));
+            }
+
+            if matches!(action, ActionMode::DryRun(_)) {
+                println!("[Mkdir] {:?}", parent);
+            } else {
+                fs::create_dir_all(parent).map_err(|e| {
+                    anyhow!("Failed to create target subfolder: {:?} - {:?}", parent, e)
+                })?;
+            }
+        }
+    }
+
+    let result = match action {
         ActionMode::Execute(ActualAction::Move) => move_file(source, target),
         ActionMode::Execute(ActualAction::Copy) => copy_file(source, target),
         ActionMode::Execute(ActualAction::Hardlink) => hardlink_file(source, target),
         ActionMode::Execute(ActualAction::RelativeSymlink) => relative_symlink_file(source, target),
         ActionMode::Execute(ActualAction::AbsoluteSymlink) => absolute_symlink_file(source, target),
         ActionMode::DryRun(action) => dry_run(source, target, action),
+    };
+
+    match result {
+        Ok(_) => Ok(()),
+        Err(e) => Err(anyhow!("Failed to perform action: {:?}", e)),
     }
 }
 
