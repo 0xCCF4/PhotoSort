@@ -461,6 +461,7 @@ impl Analyzer {
             file_type: &ftype,
             cleaned_name: &cleaned_name,
             duplicate_counter: None,
+            extension: path.extension().map(|ext| ext.to_string_lossy().to_string()).unwrap_or("unknown".to_owned()),
         };
 
         let new_file_path = |file_name_info: &NameFormatterInvocationInfo| -> Result<PathBuf> {
@@ -484,7 +485,7 @@ impl Analyzer {
                     target_path.push(component);
                 }
             }
-            Ok(target_path.with_extension(path.extension().expect("There should be an extension")))
+            Ok(target_path)
         };
 
         let mut new_path = new_file_path(&file_name_info)?;

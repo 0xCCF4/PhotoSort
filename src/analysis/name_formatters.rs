@@ -17,6 +17,7 @@ pub struct NameFormatterInvocationInfo<'a> {
     pub file_type: &'a FileType,
     pub cleaned_name: &'a str,
     pub duplicate_counter: Option<u32>,
+    pub extension: String,
 }
 
 pub trait NameFormatter {
@@ -36,3 +37,5 @@ mod duplicate;
 pub use duplicate::*;
 mod file_type;
 pub use file_type::*;
+mod extension;
+pub use extension::*;
