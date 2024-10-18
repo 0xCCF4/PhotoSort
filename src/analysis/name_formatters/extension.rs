@@ -21,17 +21,15 @@ impl NameFormatter for FormatExtension {
         capture: regex::Captures<'_>,
         invocation_info: &NameFormatterInvocationInfo,
     ) -> Result<String> {
-        let option = capture
-            .get(3)
-            .map_or("copy", |m| m.as_str());
-        
+        let option = capture.get(3).map_or("copy", |m| m.as_str());
+
         let extension = match option {
-            "lower"|"low"|"lowercase"|"l" => invocation_info.extension.to_lowercase(),
-            "upper"|"up"|"uppercase"|"u" => invocation_info.extension.to_uppercase(),
-            "copy"|"normal"|"standard"|"pass"|"p" => invocation_info.extension.to_owned(),
+            "lower" | "low" | "lowercase" | "l" => invocation_info.extension.to_lowercase(),
+            "upper" | "up" | "uppercase" | "u" => invocation_info.extension.to_uppercase(),
+            "copy" | "normal" | "standard" | "pass" | "p" => invocation_info.extension.to_owned(),
             _ => return Err(anyhow!("Unknown extension format")),
         };
-        
+
         Ok(extension)
     }
 }
