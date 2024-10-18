@@ -37,9 +37,11 @@ struct Arguments {
     /// `{type}` is replaced with MOV or IMG.
     /// `{type?img,vid}` is replaced with `img` if the file is an image, `vid` if the file is a video. Note that, when using other types than IMG or MOV,
     /// and rerunning the program again, the custom type will be seen as part of the file name.
+    /// `{ext?upper/lower/copy}` is replaced with the original file extension. If `?upper` or `?lower` is specified, the extension will be made lower/upper case.
+    ///      leaving out `?...` or using `copy` copies the original file extension.
     /// Commands of the form {label:cmd} are replaced by {cmd}; if the replacement string is not empty then a prefix of "label" is added.
     /// This might be useful to add separators only if there is e.g. a {dup} part.
-    #[arg(short, long, default_value = "{type}{_:date}{-:name}{-:dup}")]
+    #[arg(short, long, default_value = "{type}{_:date}{-:name}{-:dup}.{ext}")]
     file_format: String,
     /// If the file format contains a "/", indicating that the file should be placed in a subdirectory,
     /// the mkdir flag controls if the tool is allowed to create non-existing subdirectories. No folder is created in dry-run mode.
@@ -126,6 +128,7 @@ fn main() {
     analyzer.add_formatter(photo_sort::analysis::name_formatters::FormatDuplicate::default());
     analyzer.add_formatter(photo_sort::analysis::name_formatters::FormatDate::default());
     analyzer.add_formatter(photo_sort::analysis::name_formatters::FormatFileType::default());
+    analyzer.add_formatter(photo_sort::analysis::name_formatters::FormatExtension::default());
 
     debug!("Running program");
 
