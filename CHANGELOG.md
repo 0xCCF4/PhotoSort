@@ -6,6 +6,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1](https://github.com/0xCCF4/PhotoSort/compare/v0.2.0...v0.2.1) - 2024-10-18
+
+### Added
+
+- extension can be made upper or lower case when specifying a custom name format
+
+### Other
+
+- fixed clippy errors
+- ran cargo fmt
+- *(deps)* bump clap from 4.5.19 to 4.5.20
+- *(deps)* bump clap from 4.5.18 to 4.5.19
+- *(deps)* bump actions-rust-lang/setup-rust-toolchain
+- Merge pull request [#41](https://github.com/0xCCF4/PhotoSort/pull/41) from 0xCCF4/dependabot/cargo/regex-1.11.0
+- *(deps)* bump regex from 1.10.6 to 1.11.0
+- *(deps)* bump clap from 4.5.17 to 4.5.18
+- *(deps)* bump actions-rust-lang/setup-rust-toolchain
+- *(deps)* bump anyhow from 1.0.87 to 1.0.89
+
 ## [0.2.0](https://github.com/0xCCF4/PhotoSort/compare/v0.1.6...v0.2.0) - 2024-09-13
 
 ### Added
