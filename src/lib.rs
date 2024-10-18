@@ -461,7 +461,10 @@ impl Analyzer {
             file_type: &ftype,
             cleaned_name: &cleaned_name,
             duplicate_counter: None,
-            extension: path.extension().map(|ext| ext.to_string_lossy().to_string()).unwrap_or("unknown".to_owned()),
+            extension: path
+                .extension()
+                .map(|ext| ext.to_string_lossy().to_string())
+                .unwrap_or("unknown".to_owned()),
         };
 
         let new_file_path = |file_name_info: &NameFormatterInvocationInfo| -> Result<PathBuf> {
