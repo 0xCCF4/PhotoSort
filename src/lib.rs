@@ -314,7 +314,7 @@ impl Analyzer {
             Literal(String),
             Command(&'a str, String),
         }
-        impl<'a> FormatString<'a> {
+        impl FormatString<'_> {
             fn formatted_string(self) -> String {
                 match self {
                     FormatString::Literal(str) => str,
