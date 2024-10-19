@@ -43,6 +43,11 @@ struct Arguments {
     /// This might be useful to add separators only if there is e.g. a {dup} part.
     #[arg(short, long, default_value = "{type}{_:date}{-:name}{-:dup}.{ext}")]
     file_format: String,
+    /// The target format for files that have no date. The `analysis_mode` allows specifying which method
+    /// should be used to derive a date for a file. See the `file_format` option for an extensive description of possible
+    /// format values. If not specified, uses the same format as for normal files.
+    #[arg(long, default_value = None)]
+    nodate_file_format: Option<String>,
     /// If the file format contains a "/", indicating that the file should be placed in a subdirectory,
     /// the mkdir flag controls if the tool is allowed to create non-existing subdirectories. No folder is created in dry-run mode.
     #[arg(long, default_value = "false", alias = "mkdirs")]
@@ -98,6 +103,7 @@ fn main() {
         target_dir: PathBuf::from(args.target_dir.as_str()),
         recursive_source: args.recursive,
         file_format: args.file_format.clone(),
+        nodate_file_format: args.nodate_file_format.unwrap_or(args.file_format.clone()),
         date_format: args.date_format.clone(),
         extensions: args.extensions.clone(),
         mkdir: args.mkdir,

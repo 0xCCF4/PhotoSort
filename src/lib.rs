@@ -67,7 +67,8 @@ impl FromStr for AnalysisType {
 /// * `source_dirs` - A vector of `Path` references that represent the source directories to analyze.
 /// * `target_dir` - A `Path` reference that represents the target directory for the analysis results.
 /// * `recursive_source` - A boolean that indicates whether to analyze source directories recursively.
-/// * `file_format` - A string that represents the format of the files to analyze.
+/// * `file_format` - A string that represents the target format of the files to analyze.
+/// * `nodate_file_format` - A string that represent the target format of files with no date.
 /// * `date_format` - A string that represents the format of the dates in the files to analyze.
 /// * `extensions` - A vector of strings that represent the file extensions to consider during analysis.
 /// * `action_type` - An `ActionMode` that specifies the type of action to perform on a file after analysis.
@@ -79,6 +80,7 @@ pub struct AnalyzerSettings {
     pub target_dir: PathBuf,
     pub recursive_source: bool,
     pub file_format: String,
+    pub nodate_file_format: String,
     pub date_format: String,
     pub extensions: Vec<String>,
     #[cfg(feature = "video")]
@@ -472,9 +474,13 @@ impl Analyzer {
         };
 
         let new_file_path = |file_name_info: &NameFormatterInvocationInfo| -> Result<PathBuf> {
-            let path_split: Vec<_> = self
-                .settings
-                .file_format
+            let format_string = if date.is_some() {
+                self.settings.file_format.as_str()
+            } else {
+                self.settings.nodate_file_format.as_str()
+            };
+
+            let path_split: Vec<_> = format_string
                 .split('/')
                 .map(|component| self.replace_filepath_parts(component, file_name_info))
                 .collect();
