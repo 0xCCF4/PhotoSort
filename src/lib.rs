@@ -275,7 +275,7 @@ impl Analyzer {
                 let exif_result = match exif_result {
                     Err(e) => {
                         warn!("Error analyzing Exif data: {} for {:?}", e, path);
-                        warn!("Falling back to name analysis");
+                        info!("Falling back to name analysis");
                         None
                     }
                     Ok(date) => date,
@@ -434,6 +434,10 @@ impl Analyzer {
             err
         })?;
         let cleaned_name = name::clean_image_name(cleaned_name.as_str());
+
+        if date.is_none() {
+            warn!("No date was derived for file {:?}.", path);
+        }
 
         debug!(
             "Analysis results: Date: {:?}, Cleaned name: {:?}",
