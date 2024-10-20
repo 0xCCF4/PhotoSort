@@ -1,5 +1,5 @@
 use lazy_static::lazy_static;
-use log::debug;
+use log::trace;
 use regex::Regex;
 
 // Regular expressions for matching and cleaning image names.
@@ -45,6 +45,6 @@ pub fn clean_image_name(name: &str) -> String {
             }
         }
     };
-    debug!("Cleaned name: {:?} -> {:?}", name, result);
+    trace!("Cleaned name: {:?} -> {:?}", name, result);
     result
 }

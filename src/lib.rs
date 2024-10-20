@@ -5,7 +5,7 @@ use action::ActionMode;
 use anyhow::{anyhow, Result};
 use chrono::NaiveDateTime;
 use lazy_static::lazy_static;
-use log::{debug, error, info, warn};
+use log::{debug, error, info, trace, warn};
 use std::ffi::OsStr;
 use std::fs;
 use std::fs::File;
@@ -69,6 +69,7 @@ impl FromStr for AnalysisType {
 /// * `recursive_source` - A boolean that indicates whether to analyze source directories recursively.
 /// * `file_format` - A string that represents the target format of the files to analyze.
 /// * `nodate_file_format` - A string that represent the target format of files with no date.
+/// * `unknown_file_format` - An optional string that represents the target format of files not matching the list of extensions
 /// * `date_format` - A string that represents the format of the dates in the files to analyze.
 /// * `extensions` - A vector of strings that represent the file extensions to consider during analysis.
 /// * `action_type` - An `ActionMode` that specifies the type of action to perform on a file after analysis.
@@ -81,6 +82,7 @@ pub struct AnalyzerSettings {
     pub recursive_source: bool,
     pub file_format: String,
     pub nodate_file_format: String,
+    pub unknown_file_format: Option<String>,
     pub date_format: String,
     pub extensions: Vec<String>,
     #[cfg(feature = "video")]
@@ -399,11 +401,11 @@ impl Analyzer {
             ));
         }
 
-        debug!("Parsed format string {:?} to", format_string);
+        trace!("Parsed format string {:?} to", format_string);
         for part in &final_string {
             match part {
-                FormatString::Literal(str) => debug!(" - Literal: {:?}", str),
-                FormatString::Command(cmd, str) => debug!(" - Command: {:?}\t{:?}", cmd, str),
+                FormatString::Literal(str) => trace!(" - Literal: {:?}", str),
+                FormatString::Command(cmd, str) => trace!(" - Command: {:?}\t{:?}", cmd, str),
             }
         }
 
@@ -419,6 +421,7 @@ impl Analyzer {
     /// # Arguments
     ///
     /// * `path` - A `PathBuf` that represents the path of the file to perform the action on.
+    /// * `is_unknown_file` - If set to true no date parsing will happen, instead the unknown file format string will be used to format the file.
     ///
     /// # Returns
     ///
@@ -430,21 +433,36 @@ impl Analyzer {
     /// * The analysis of the file fails.
     /// * An IO error occurs while analyzing the date
     /// * An IO error occurs while doing the file action
-    pub fn run_file(&self, path: &PathBuf) -> Result<()> {
-        let (date, cleaned_name) = self.analyze(path).map_err(|err| {
-            error!("Error extracting date: {}", err);
-            err
-        })?;
-        let cleaned_name = name::clean_image_name(cleaned_name.as_str());
+    /// * If `unknown_file_switch` is set to `true` but no unknown file format string was set.
+    pub fn run_file(&self, path: &PathBuf, is_unknown_file: bool) -> Result<()> {
+        let (date, cleaned_name) = if !is_unknown_file {
+            let (date, cleaned_name) = self.analyze(path).map_err(|err| {
+                error!("Error extracting date: {}", err);
+                err
+            })?;
+            let cleaned_name = name::clean_image_name(cleaned_name.as_str());
 
-        if date.is_none() {
-            warn!("No date was derived for file {:?}.", path);
-        }
+            debug!(
+                "Analysis results: Date: {:?}, Cleaned name: {:?}",
+                date, cleaned_name
+            );
 
-        debug!(
-            "Analysis results: Date: {:?}, Cleaned name: {:?}",
-            date, cleaned_name
-        );
+            if date.is_none() {
+                warn!("No date was derived for file {:?}.", path);
+            }
+
+            (date, cleaned_name)
+        } else {
+            (
+                None,
+                path.with_extension("")
+                    .file_name()
+                    .ok_or(anyhow::anyhow!("No file name"))?
+                    .to_str()
+                    .ok_or(anyhow::anyhow!("Invalid file name"))?
+                    .to_string(),
+            )
+        };
 
         let date_string = match date {
             None => "NODATE".to_string(),
@@ -470,11 +488,17 @@ impl Analyzer {
             extension: path
                 .extension()
                 .map(|ext| ext.to_string_lossy().to_string())
-                .unwrap_or("unknown".to_owned()),
+                .unwrap_or("".to_owned()),
         };
 
         let new_file_path = |file_name_info: &NameFormatterInvocationInfo| -> Result<PathBuf> {
-            let format_string = if date.is_some() {
+            let format_string = if is_unknown_file {
+                self.settings
+                    .unknown_file_format
+                    .as_ref()
+                    .ok_or(anyhow!("No unknown format string specified"))?
+                    .as_str()
+            } else if date.is_some() {
                 self.settings.file_format.as_str()
             } else {
                 self.settings.nodate_file_format.as_str()
@@ -604,16 +628,25 @@ impl Analyzer {
             } else {
                 let valid_ext = self.is_valid_extension(path.extension());
                 match valid_ext {
-                    Ok(false) => {
-                        debug!(
-                            "Skipping file because extension is not in the list: {:?}",
-                            path
-                        );
-                        continue;
-                    }
+                    Ok(false) => match self.settings.unknown_file_format {
+                        None => {
+                            debug!(
+                                "Skipping file because extension is not in the list: {:?}",
+                                path
+                            );
+                            continue;
+                        }
+                        Some(_) => {
+                            debug!("Processing unknown file: {:?}", path);
+                            let result = self.run_file(&path, true);
+                            if let Err(err) = result {
+                                error!("Error renaming file: {}", err);
+                            }
+                        }
+                    },
                     Ok(true) => {
                         debug!("Processing file: {:?}", path);
-                        let result = self.run_file(&path);
+                        let result = self.run_file(&path, false);
                         if let Err(err) = result {
                             error!("Error renaming file: {}", err);
                         }
