@@ -1,6 +1,6 @@
 [package]
 name = "photo_sort"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 description = """
 A tool to rename and sort photos/videos by its EXIF date/metadata. It tries to extract the date
