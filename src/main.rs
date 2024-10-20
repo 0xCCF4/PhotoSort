@@ -46,8 +46,13 @@ struct Arguments {
     /// The target format for files that have no date. The `analysis_mode` allows specifying which method
     /// should be used to derive a date for a file. See the `file_format` option for an extensive description of possible
     /// format values. If not specified, uses the same format as for normal files.
-    #[arg(long, default_value = None)]
+    #[arg(long = "nodate")]
     nodate_file_format: Option<String>,
+    /// The target file format for files that do not match the specified extensions list. If not present
+    /// files that do not match the extension list are ignored, hence not moved, copied etc. See the `file_format` for an extensive description
+    /// of possible format values.
+    #[arg(long = "unknown")]
+    unknown_file_format: Option<String>,
     /// If the file format contains a "/", indicating that the file should be placed in a subdirectory,
     /// the mkdir flag controls if the tool is allowed to create non-existing subdirectories. No folder is created in dry-run mode.
     #[arg(long, default_value = "false", alias = "mkdirs")]
@@ -104,6 +109,7 @@ fn main() {
         recursive_source: args.recursive,
         file_format: args.file_format.clone(),
         nodate_file_format: args.nodate_file_format.unwrap_or(args.file_format.clone()),
+        unknown_file_format: args.unknown_file_format,
         date_format: args.date_format.clone(),
         extensions: args.extensions.clone(),
         mkdir: args.mkdir,

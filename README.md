@@ -101,11 +101,14 @@ Options:
                                        is added. This might be useful to add separators only if there is e.g. a {dup}
                                        part [default: {type}{_:date}{-:name}{-:dup}]
                                        
-      --nodate-file-format <NODATE_FILE_FORMAT>
-                                       The target format for files that have no date. The `analysis_mode` allows specifying
+      --nodate <NODATE_FILE_FORMAT>    The target format for files that have no date. The `analysis_mode` allows specifying
                                        which method should be used to derive a date for a file. See the `file_format` option
                                        for an extensive description of possible format values. If not specified, uses the
                                        same format as for normal files.
+                                       
+      --unknown <UNKNOWN_FILE_FORMAT>  The target file format for files that do not match the specified extensions list.
+                                       If not present files that do not match the extension list are ignored, hence not moved,
+                                       copied etc. See the `file_format` for an extensive description of possible format values
                                        
       --mkdir                          If the file format contains a "/", indicating that the file should be placed in a
                                        subdirectory, the mkdir flag controls if the tool is allowed to create non-existing subdirectories. No folder is
