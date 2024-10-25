@@ -132,11 +132,18 @@ Options:
   -n, --dry-run                        Dry-run If set, the tool will not move any files but only print the actions it would take
   
   -v, --verbose                        Be verbose, if set, the tool will print more information about the actions it takes.
-                                       Setting the RUST_LOG env var overrides this flag
                                        
   -d, --debug                          Debug, if set, the tool will print debug information (including debug implies
-                                       setting verbose). Setting the RUST_LOG env var overrides this flag
-                                       
+                                       setting verbose).
+                                      
+  -l, --log <LOGFILE>                  Logfile, if set, the tool will log its output to the specified file. Appending to
+                                       the specified file if it already exists
+
+  -q, --quiet                          If set, suppresses the output of the tool to stdout/stderr. Only displaying error
+                                       messages. Specifying a logfile at the same time will redirect the full output that
+                                       would have been displayed to stdout/stderr to the logfile. Specifying `--debug` or
+                                       `--verbose` plus `--quiet` without a logfile will result in an error
+
   -h, --help                           Print help
   
   -V, --version                        Print version 
@@ -186,11 +193,11 @@ please open an issue or a pull request.
 
 ### Something works differently than expected?
 
-Try running the tool with the `RUST_LOG` environment variable set to `trace` to get more information about what the tool
+Try running the tool with the `--debug` argument to get more information about what the tool
 is doing and open an issue with the output.
 
 ```bash
-RUST_LOG=trace photo_sort --source_dir /path/to/photos --target_dir /path/to/sorted_photos
+photo_sort --debug --source_dir /path/to/photos --target_dir /path/to/sorted_photos ...
 ```
 
 ## License

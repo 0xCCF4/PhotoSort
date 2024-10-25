@@ -1,8 +1,9 @@
 use clap::{arg, Parser};
-use log::{debug, LevelFilter};
+use log::{debug, error, info, trace, warn, LevelFilter};
 use photo_sort::{action, AnalysisType, Analyzer};
-use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use chrono::{Utc};
+use fern::colors::{Color, ColoredLevelConfig};
 
 /// A simple command line tool to sort photos by date.
 #[derive(Parser, Debug)]
@@ -77,18 +78,65 @@ struct Arguments {
     /// If set, the tool will not move any files but only print the actions it would take.
     #[arg(short = 'n', long, default_value = "false")]
     dry_run: bool,
-    /// Be verbose, if set, the tool will print more information about the actions it takes. Setting the RUST_LOG env var overrides this flag.
+    /// Be verbose, if set, the tool will print more information about the actions it takes.
     #[arg(short, long, default_value = "false")]
     verbose: bool,
-    /// Debug, if set, the tool will print debug information (including debug implies setting verbose). Setting the RUST_LOG env var overrides this flag.
+    /// Debug, if set, the tool will print debug information (including debug implies setting verbose).
     #[arg(short, long, default_value = "false")]
     debug: bool,
+    /// Logfile, if set, the tool will log its output to the specified file. Appending to the specified file if it already exists.
+    #[arg(short, long = "log")]
+    logfile: Option<String>,
+    /// If set, suppresses the output of the tool to stdout/stderr. Only displaying error messages. Specifying a logfile at the same
+    /// time will redirect the full output that would have been displayed to stdout/stderr to the logfile. Specifying `--debug` or `--verbose`
+    /// plus `--quiet` without a logfile will result in an error.
+    #[arg(short, long, default_value = "false")]
+    quiet: bool,
+}
+
+fn setup_loggers<Q: AsRef<Path>>(general_log_level: LevelFilter, stdout_log_level: LevelFilter, file: Option<Q>) -> anyhow::Result<()> {
+    let colors = ColoredLevelConfig::new()
+        .info(Color::Green);
+
+    let mut config = fern::Dispatch::new()
+        .level(general_log_level);
+
+    if let Some(file) = file {
+        config = config
+            .chain(fern::Dispatch::new()
+                       .format(move |out, message, record| {
+                           out.finish(format_args!(
+                               "[{} {} {}] {}",
+                               Utc::now().format("%Y-%m-%d %H:%M:%S%.3f"),
+                               record.level(),
+                               record.target(),
+                               message
+                           ))
+                       })
+                       .chain(fern::log_file(file).map_err(|err| anyhow::anyhow!("Failed to open log file: {:?}", err))?));
+    }
+
+    config
+        .chain(fern::Dispatch::new()
+            .format(move |out, message, record| {
+                out.finish(format_args!(
+                    "[{} {} {}] {}",
+                    Utc::now().format("%Y-%m-%d %H:%M:%S%.3f"),
+                    colors.color(record.level()),
+                    record.target(),
+                    message
+                ))
+            })
+            .level(stdout_log_level)
+            .chain(std::io::stdout())
+        )
+        .apply().map_err(|err| anyhow::anyhow!("Failed to apply logger configuration: {:?}", err))
 }
 
 fn main() {
     let args = Arguments::parse();
 
-    if !env::vars_os().any(|(key, _)| key == "RUST_LOG") {
+    let log_level_general = {
         let mut log_level = LevelFilter::Warn;
         if args.verbose {
             log_level = LevelFilter::Info;
@@ -96,10 +144,29 @@ fn main() {
         if args.debug {
             log_level = LevelFilter::Trace;
         }
-        env::set_var("RUST_LOG", format!("{}", log_level));
-    }
 
-    env_logger::init();
+        if args.quiet && args.logfile.is_none() {
+            if args.debug || args.verbose {
+                eprintln!("Error: Cannot use --debug/--verbose with --quiet. Maybe you wanted to specify a --logfile to log the full output to, while suppressing the STDOUT/STDERR output?");
+                return;
+            }
+
+            log_level = LevelFilter::Error;
+        }
+        
+        log_level
+    };
+
+    let console_log_level = if args.quiet {
+        LevelFilter::Error
+    } else {
+        log_level_general
+    };
+
+    if let Err(e) = setup_loggers(log_level_general, console_log_level, args.logfile) {
+        eprintln!("Error starting application: {:?}", e);
+        return;
+    }
 
     debug!("Initializing program");
 
