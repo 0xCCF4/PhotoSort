@@ -630,7 +630,7 @@ impl Analyzer {
                 match valid_ext {
                     Ok(false) => match self.settings.unknown_file_format {
                         None => {
-                            debug!(
+                            info!(
                                 "Skipping file because extension is not in the list: {:?}",
                                 path
                             );

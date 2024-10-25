@@ -50,7 +50,8 @@ struct Arguments {
     nodate_file_format: Option<String>,
     /// The target file format for files that do not match the specified extensions list. If not present
     /// files that do not match the extension list are ignored, hence not moved, copied etc. See the `file_format` for an extensive description
-    /// of possible format values.
+    /// of possible format values. By using `--unknown others/{name}{.:ext}` all unknown files are moved to the subdirectory "others" relative
+    /// to the target directory (specified by `--target-dir`).
     #[arg(long = "unknown")]
     unknown_file_format: Option<String>,
     /// If the file format contains a "/", indicating that the file should be placed in a subdirectory,
@@ -93,9 +94,9 @@ fn main() {
             log_level = LevelFilter::Info;
         }
         if args.debug {
-            log_level = LevelFilter::Debug;
+            log_level = LevelFilter::Trace;
         }
-        env::set_var("RUST_LOG", format!("photo_sort={}", log_level));
+        env::set_var("RUST_LOG", format!("{}", log_level));
     }
 
     env_logger::init();
