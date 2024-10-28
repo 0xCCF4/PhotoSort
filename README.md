@@ -143,6 +143,8 @@ Options:
                                        messages. Specifying a logfile at the same time will redirect the full output that
                                        would have been displayed to stdout/stderr to the logfile. Specifying `--debug` or
                                        `--verbose` plus `--quiet` without a logfile will result in an error
+                                      
+  -p, --progress                       If set, display a progress bar while processing files
 
   -h, --help                           Print help
   

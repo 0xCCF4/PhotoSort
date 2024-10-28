@@ -111,7 +111,7 @@ lazy_static! {
 pub struct Analyzer {
     name_transformers: Vec<Box<dyn analysis::filename2date::FileNameToDateTransformer>>,
     name_formatters: Vec<Box<dyn analysis::name_formatters::NameFormatter>>,
-    settings: AnalyzerSettings,
+    pub settings: AnalyzerSettings,
 }
 
 /// Implementation of methods for the `Analyzer` struct.
@@ -421,7 +421,6 @@ impl Analyzer {
     /// # Arguments
     ///
     /// * `path` - A `PathBuf` that represents the path of the file to perform the action on.
-    /// * `is_unknown_file` - If set to true no date parsing will happen, instead the unknown file format string will be used to format the file.
     ///
     /// # Returns
     ///
@@ -433,8 +432,32 @@ impl Analyzer {
     /// * The analysis of the file fails.
     /// * An IO error occurs while analyzing the date
     /// * An IO error occurs while doing the file action
-    /// * If `unknown_file_switch` is set to `true` but no unknown file format string was set.
-    pub fn run_file(&self, path: &PathBuf, is_unknown_file: bool) -> Result<()> {
+    pub fn run_file(&self, path: &PathBuf) -> Result<()> {
+        let valid_ext = self.is_valid_extension(path.extension());
+        let is_unknown_file = match valid_ext {
+            Ok(false) => match self.settings.unknown_file_format {
+                None => {
+                    info!(
+                        "Skipping file because extension is not in the list: {:?}",
+                        path
+                    );
+                    return Ok(());
+                }
+                Some(_) => {
+                    debug!("Processing unknown file: {:?}", path);
+                    true
+                }
+            },
+            Ok(true) => {
+                debug!("Processing file: {:?}", path);
+                false
+            }
+            Err(err) => {
+                warn!("Error checking file extension: {}", err);
+                return Ok(());
+            }
+        };
+
         let (date, cleaned_name) = if !is_unknown_file {
             let (date, cleaned_name) = self.analyze(path).map_err(|err| {
                 error!("Error extracting date: {}", err);
@@ -591,100 +614,36 @@ impl Analyzer {
         let valid_video = false;
         Ok(valid_photo || valid_video)
     }
+}
 
-    /// Executes the analyzer on a folder based on the `Analyzer`'s settings.
-    ///
-    /// # Arguments
-    ///
-    /// * `root_source` - A `Path` reference that represents the root source directory to rename files in.
-    /// * `target_path` - A `Path` reference that represents the target directory for the renamed files.
-    /// * `recursive` - A boolean that indicates whether to rename files in subdirectories of the root source directory.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<()>` - Returns `Ok(())` if the files could be renamed successfully, `Err(anyhow::Error)` otherwise.
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if:
-    /// * The analysis of the file fails.
-    /// * An IO error occurs while analyzing the date
-    /// * An IO error occurs while doing the file action
-    pub fn run_files_in_folder(
-        &self,
-        root_source: &PathBuf,
-        _target_path: &PathBuf,
-        recursive: bool,
-    ) -> Result<()> {
-        let entries = fs::read_dir(root_source)?;
-        for entry in entries {
-            let entry = entry?;
-            let path = entry.path();
-            if path.is_dir() {
-                if recursive {
-                    debug!("Processing subfolder: {:?}", path);
-                    self.run_files_in_folder(&path, _target_path, recursive)?;
-                }
-            } else {
-                let valid_ext = self.is_valid_extension(path.extension());
-                match valid_ext {
-                    Ok(false) => match self.settings.unknown_file_format {
-                        None => {
-                            info!(
-                                "Skipping file because extension is not in the list: {:?}",
-                                path
-                            );
-                            continue;
-                        }
-                        Some(_) => {
-                            debug!("Processing unknown file: {:?}", path);
-                            let result = self.run_file(&path, true);
-                            if let Err(err) = result {
-                                error!("Error renaming file: {}", err);
-                            }
-                        }
-                    },
-                    Ok(true) => {
-                        debug!("Processing file: {:?}", path);
-                        let result = self.run_file(&path, false);
-                        if let Err(err) = result {
-                            error!("Error renaming file: {}", err);
-                        }
-                    }
-                    Err(err) => {
-                        warn!("Error checking file extension: {}", err);
-                        continue;
-                    }
-                }
+/// Finds all files in a source directory and its subdirectories.
+///
+/// # Arguments
+/// * `directory` - The directory to search for files.
+/// * `recursive` - A boolean that indicates whether to search subdirectories.
+/// * `result` - A mutable reference to a vector of `PathBuf` objects that will hold the results.
+///
+/// # Errors
+/// This function will return an error if:
+/// * The directory cannot be read or other IO errors occur.
+pub fn find_files_in_source(
+    directory: PathBuf,
+    recursive: bool,
+    result: &mut Vec<PathBuf>,
+) -> Result<()> {
+    let entries = fs::read_dir(directory)?;
+    for entry in entries {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            if recursive {
+                debug!("Processing subfolder: {:?}", path);
+                find_files_in_source(path, recursive, result)?;
             }
+        } else {
+            trace!("Found file: {:?}", &path);
+            result.push(path);
         }
-        Ok(())
     }
-
-    /// Runs the `Analyzer`, renaming files in the source directories based on the `Analyzer`'s settings.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<()>` - Returns `Ok(())` if the files could be renamed successfully, `Err(anyhow::Error)` otherwise.
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if:
-    /// * The analysis of the file fails.
-    /// * An IO error occurs while analyzing the date
-    /// * An IO error occurs while doing the file action
-    pub fn run(&self) -> Result<()> {
-        for source in &self.settings.source_dirs {
-            info!("Processing source folder: {:?}", source);
-            let result = self.run_files_in_folder(
-                source,
-                &self.settings.target_dir,
-                self.settings.recursive_source,
-            );
-            if let Err(err) = result {
-                eprintln!("Error processing folder: {}", err);
-            }
-        }
-        Ok(())
-    }
+    Ok(())
 }
