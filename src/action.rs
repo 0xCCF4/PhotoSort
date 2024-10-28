@@ -125,7 +125,7 @@ pub fn file_action(
             }
 
             if matches!(action, ActionMode::DryRun(_)) {
-                println!("[Mkdir] {:?}", parent);
+                error!("[Mkdir] {:?}", parent);
             } else {
                 fs::create_dir_all(parent).map_err(|e| {
                     anyhow!("Failed to create target subfolder: {:?} - {:?}", parent, e)
@@ -150,7 +150,7 @@ pub fn file_action(
 }
 
 fn dry_run(source: &PathBuf, target: &PathBuf, action: &ActualAction) -> std::io::Result<()> {
-    println!("[{}] {:?} -> {:?}", action, source, target);
+    error!("[{}] {:?} -> {:?}", action, source, target);
     Ok(())
 }
 
