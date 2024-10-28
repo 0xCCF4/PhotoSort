@@ -211,7 +211,7 @@ pub fn main() {
     }
 
     debug!("Initializing program");
-    
+
     debug!("Video features enabled: {}", cfg!(feature = "video"));
 
     let result = Analyzer::new(photo_sort::AnalyzerSettings {
@@ -278,8 +278,8 @@ pub fn main() {
             ProgressStyle::with_template(
                 "{spinner:.green} [{elapsed_precise}] [{wide_bar:.green/grey}] {pos}/{len} ({eta})",
             )
-                .unwrap()
-                .progress_chars("=>-"),
+            .unwrap()
+            .progress_chars("=>-"),
         );
 
         multi.add(bar.clone());
