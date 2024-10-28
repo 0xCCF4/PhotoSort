@@ -6,6 +6,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3](https://github.com/0xCCF4/PhotoSort/compare/v0.2.2...v0.2.3) - 2024-10-28
+
+### Added
+
+- added progress bar option
+- added a --log and --quiet option
+
+### Other
+
+- ran cargo fmt
+- changed log level for unprocessed files from debug to info, --debug now has TRACE log level
+- *(deps)* bump anyhow from 1.0.89 to 1.0.90
+
 ## [0.2.2](https://github.com/0xCCF4/PhotoSort/compare/v0.2.1...v0.2.2) - 2024-10-20
 
 ### Added
