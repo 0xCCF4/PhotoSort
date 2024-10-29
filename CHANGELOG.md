@@ -6,6 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.4](https://github.com/0xCCF4/PhotoSort/compare/v0.2.3...v0.2.4) - 2024-10-29
+
+### Added
+
+- added multithreading support
+
+### Other
+
+- Merge pull request [#59](https://github.com/0xCCF4/PhotoSort/pull/59) from 0xCCF4/dependabot/cargo/regex-1.11.1
+- *(deps)* bump regex from 1.11.0 to 1.11.1
+
 ## [0.2.3](https://github.com/0xCCF4/PhotoSort/compare/v0.2.2...v0.2.3) - 2024-10-28
 
 ### Added
