@@ -109,8 +109,9 @@ lazy_static! {
 /// * `name_formatters` - A list of `NameFormatter` objects that are used to generate the new names of files after analysis.
 /// * `settings` - An `AnalyzerSettings` object that holds the settings for the `Analyzer`.
 pub struct Analyzer {
-    name_transformers: Vec<Box<dyn analysis::filename2date::FileNameToDateTransformer>>,
-    name_formatters: Vec<Box<dyn analysis::name_formatters::NameFormatter>>,
+    name_transformers:
+        Vec<Box<dyn analysis::filename2date::FileNameToDateTransformer + Send + Sync>>,
+    name_formatters: Vec<Box<dyn analysis::name_formatters::NameFormatter + Send + Sync>>,
     pub settings: AnalyzerSettings,
 }
 
@@ -167,7 +168,9 @@ impl Analyzer {
     ///
     /// # Arguments
     /// * `transformer` - A `NameTransformer` object that is used to transform the names of files during analysis.
-    pub fn add_transformer<T: 'static + analysis::filename2date::FileNameToDateTransformer>(
+    pub fn add_transformer<
+        T: 'static + analysis::filename2date::FileNameToDateTransformer + Send + Sync,
+    >(
         &mut self,
         transformer: T,
     ) {
@@ -178,7 +181,7 @@ impl Analyzer {
     ///
     /// # Arguments
     /// * `formatter` - A `NameFormatter` object that is used to generate the new names of files after analysis.
-    pub fn add_formatter<T: 'static + analysis::name_formatters::NameFormatter>(
+    pub fn add_formatter<T: 'static + analysis::name_formatters::NameFormatter + Send + Sync>(
         &mut self,
         formatter: T,
     ) {

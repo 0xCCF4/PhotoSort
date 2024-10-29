@@ -35,7 +35,7 @@ use crate::analysis::filename2date::FileNameToDateTransformer;
 /// * A transformation function failed and errors
 pub fn get_name_time(
     name: &str,
-    parsers: &Vec<Box<dyn FileNameToDateTransformer>>,
+    parsers: &Vec<Box<dyn FileNameToDateTransformer + Send + Sync>>,
 ) -> Result<Option<(NaiveDateTime, String)>> {
     for transformer in parsers {
         let result = transformer.try_transform_name(name);

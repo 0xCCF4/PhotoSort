@@ -145,6 +145,8 @@ Options:
                                        `--verbose` plus `--quiet` without a logfile will result in an error
                                       
   -p, --progress                       If set, display a progress bar while processing files
+  
+  --threads <THREADS>                  If set, use multi-threading
 
   -h, --help                           Print help
   
@@ -195,7 +197,7 @@ please open an issue or a pull request.
 
 ### Something works differently than expected?
 
-Try running the tool with the `--debug` argument to get more information about what the tool
+Try running the tool with the `--debug` argument (and without the `--threads` argument) to get more information about what the tool
 is doing and open an issue with the output.
 
 ```bash
