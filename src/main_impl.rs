@@ -6,6 +6,9 @@ use indicatif_log_bridge::LogWrapper;
 use log::{debug, error, info, LevelFilter};
 use photo_sort::{action, find_files_in_source, AnalysisType, Analyzer};
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::Arc;
+use threadpool::ThreadPool;
 
 /// A simple command line tool to sort photos by date.
 #[derive(Parser, Debug)]
@@ -97,6 +100,9 @@ struct Arguments {
     /// If set, display a progress bar while processing files.
     #[arg(short, long, default_value = "false")]
     progress: bool,
+    /// If set, use multi-threading
+    #[arg(long)]
+    threads: Option<usize>,
 }
 
 fn setup_loggers<Q: AsRef<Path>>(
@@ -272,6 +278,21 @@ pub fn main() {
 
     debug!("Found {} files in source folders", files.len());
 
+    let threadpool = args.threads.map(|v| v.max(1)).map(ThreadPool::new);
+    let (sender, receiver) = channel();
+
+    let context = match threadpool {
+        None => ExecutionContext::SingleThreaded(Box::new(NormalContext { analyzer })),
+        Some(pool) => ExecutionContext::MultiThreaded(ThreadPoolContext {
+            output: sender,
+            receiver,
+            pool,
+            analyzer: Arc::new(analyzer),
+        }),
+    };
+
+    let jobs = files.len();
+
     if args.progress {
         let bar = ProgressBar::new(files.len() as u64);
         bar.set_style(
@@ -286,21 +307,83 @@ pub fn main() {
 
         for (i, file) in files.into_iter().enumerate() {
             bar.set_message(format!("{:?}", file));
-            let result = analyzer.run_file(&file);
-            if let Err(err) = result {
-                error!("Error processing file: {}", err);
-            }
+            process_file(file, &context);
             bar.set_position(i as u64);
         }
+
+        if let Some(context) = context.multi_threading() {
+            bar.set_position(0);
+            let mut count = 0;
+            for (i, _) in context.iter().take(jobs).enumerate() {
+                bar.set_position(i as u64);
+                count += 1;
+            }
+
+            if count != jobs {
+                error!("Not all jobs got executed")
+            }
+        }
+
         bar.finish_with_message("Finished processing files");
     } else {
         for file in files {
-            let result = analyzer.run_file(&file);
-            if let Err(err) = result {
-                error!("Error processing file: {}", err);
+            process_file(file, &context);
+        }
+
+        if let Some(context) = context.multi_threading() {
+            if context.iter().take(jobs).count() != jobs {
+                error!("Not all jobs got executed")
             }
         }
     }
 
     debug!("Finished execution");
+}
+
+struct ThreadPoolContext {
+    pub pool: ThreadPool,
+    pub output: Sender<()>,
+    pub receiver: Receiver<()>,
+    pub analyzer: Arc<Analyzer>,
+}
+
+struct NormalContext {
+    pub analyzer: Analyzer,
+}
+
+enum ExecutionContext {
+    MultiThreaded(ThreadPoolContext),
+    SingleThreaded(Box<NormalContext>),
+}
+
+impl ExecutionContext {
+    pub fn multi_threading(self) -> Option<Receiver<()>> {
+        if let ExecutionContext::MultiThreaded(context) = self {
+            Some(context.receiver)
+        } else {
+            None
+        }
+    }
+}
+
+fn process_file(file: PathBuf, context: &ExecutionContext) {
+    match context {
+        ExecutionContext::SingleThreaded(context) => {
+            let result = context.analyzer.run_file(&file);
+            if let Err(err) = result {
+                error!("Error processing file: {}", err);
+            }
+        }
+        ExecutionContext::MultiThreaded(context) => {
+            let output = context.output.clone();
+            let analyzer = context.analyzer.clone();
+            context.pool.execute(move || {
+                let result = analyzer.run_file(&file);
+                if let Err(err) = result {
+                    error!("Error processing file: {}", err);
+                }
+                output.send(()).expect("thread pool channel closed")
+            })
+        }
+    }
 }
