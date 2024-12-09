@@ -19,7 +19,7 @@ documentation = "https://docs.rs/photo_sort"
 
 [dependencies]
 anyhow = "1.0.94"
-chrono = "0.4.34"
+chrono = "0.4.39"
 kamadak-exif = "0.6.1"
 clap = { version = "4.5.23", features = ["derive"] }
 regex = "1.11.1"
