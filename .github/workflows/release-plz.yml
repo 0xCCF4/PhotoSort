@@ -34,7 +34,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_PAT }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
-      - uses: actions/attest-build-provenance@v1
+      - uses: actions/attest-build-provenance@v2
         with:
           subject-path: ${{ github.workspace }}/target/release/photo_sort
         continue-on-error: true
