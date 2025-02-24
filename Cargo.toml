@@ -18,7 +18,7 @@ documentation = "https://docs.rs/photo_sort"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0.95"
+anyhow = "1.0.96"
 chrono = "0.4.39"
 kamadak-exif = "0.6.1"
 clap = { version = "4.5.30", features = ["derive"] }
