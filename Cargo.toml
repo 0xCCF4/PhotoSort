@@ -37,3 +37,7 @@ threadpool = { version = "1.8.1", optional = true }
 default = ["binary"]
 video = ["dep:ffmpeg-next"] # enable video support
 binary = ["dep:fern", "dep:indicatif", "dep:indicatif-log-bridge", "dep:threadpool"] # enable main.rs dependencies
+
+[[bin]]
+name = "photo_sort"
+required-features = ["binary"]

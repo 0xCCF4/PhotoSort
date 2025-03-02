@@ -18,6 +18,15 @@ pub struct NameFormatterInvocationInfo<'a> {
     pub cleaned_name: &'a str,
     pub duplicate_counter: Option<u32>,
     pub extension: String,
+    pub bracket_info: Option<&'a BracketInfo>,
+}
+
+#[derive(Debug, Clone)]
+pub struct BracketInfo {
+    pub sequence_number: u32,
+    pub sequence_length: u32,
+    pub first_file_name: String,
+    pub last_file_name: String,
 }
 
 pub trait NameFormatter {
@@ -39,3 +48,5 @@ mod file_type;
 pub use file_type::*;
 mod extension;
 pub use extension::*;
+mod bracketed;
+pub use bracketed::*;

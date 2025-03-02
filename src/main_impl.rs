@@ -4,6 +4,7 @@ use fern::colors::{Color, ColoredLevelConfig};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use indicatif_log_bridge::LogWrapper;
 use log::{debug, error, info, LevelFilter};
+use photo_sort::analysis::name_formatters::BracketInfo;
 use photo_sort::{action, find_files_in_source, AnalysisType, Analyzer};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -60,6 +61,17 @@ struct Arguments {
     /// to the target directory (specified by `--target-dir`).
     #[arg(long = "unknown")]
     unknown_file_format: Option<String>,
+    /// The target file format for files that can be identified as bracketed photo set with different exposure levels. By using `--bracketed` all
+    /// files identified as bracketed are moved to this folder instead of the one specified by `--target-dir`. The photo's date will be extracted from the
+    /// first bracketed photo in the sequence.
+    /// The sequence number can be accessed with the format specifier `{bracket?seq}`. The name of the
+    /// first photo in the sequence can be accessed by `{bracket?name}`/`{bracket?name_first}`. The name of the last photo in the sequence.
+    /// can be accessed with `{bracket?name_last}`. The length of the sequence can be accessed with `{bracket?length}`.
+    /// Bracketed photos sequences are detected via EXIF information. The file of a sequence are expected to be adjacent to each other
+    /// (when listing the source directory in name-ascending-order). Note that using the `--bracketed` option requires each file to
+    /// be analyzed using the EXIF analyzer even if Analysis type is set to Name-only.
+    #[arg(long = "bracket")]
+    bracketed_file_format: Option<String>,
     /// If the file format contains a "/", indicating that the file should be placed in a subdirectory,
     /// the mkdir flag controls if the tool is allowed to create non-existing subdirectories. No folder is created in dry-run mode.
     #[arg(long, default_value = "false", alias = "mkdirs")]
@@ -220,6 +232,7 @@ pub fn main() {
 
     debug!("Video features enabled: {}", cfg!(feature = "video"));
 
+    let bracket_mode = args.bracketed_file_format.is_some();
     let result = Analyzer::new(photo_sort::AnalyzerSettings {
         analysis_type: args.analysis_mode,
         source_dirs: args.source_dir.iter().map(PathBuf::from).collect(),
@@ -228,6 +241,7 @@ pub fn main() {
         file_format: args.file_format.clone(),
         nodate_file_format: args.nodate_file_format.unwrap_or(args.file_format.clone()),
         unknown_file_format: args.unknown_file_format,
+        bracketed_file_format: args.bracketed_file_format,
         date_format: args.date_format.clone(),
         extensions: args.extensions.clone(),
         mkdir: args.mkdir,
@@ -259,6 +273,7 @@ pub fn main() {
     analyzer.add_formatter(photo_sort::analysis::name_formatters::FormatDate::default());
     analyzer.add_formatter(photo_sort::analysis::name_formatters::FormatFileType::default());
     analyzer.add_formatter(photo_sort::analysis::name_formatters::FormatExtension::default());
+    // analyzer.add_formatter(photo_sort::analysis::name_formatters::BracketedFormat::default());
 
     debug!("Running program");
 
@@ -293,6 +308,8 @@ pub fn main() {
 
     let jobs = files.len();
 
+    let mut bracket_info = None;
+
     if args.progress {
         let bar = ProgressBar::new(files.len() as u64);
         bar.set_style(
@@ -307,7 +324,34 @@ pub fn main() {
 
         for (i, file) in files.into_iter().enumerate() {
             bar.set_message(format!("{:?}", file));
-            process_file(file, &context);
+
+            if bracket_mode {
+                bracket_info = None;
+                if let ExecutionContext::SingleThreaded(analyzer) = &context {
+                    match analyzer.analyzer.get_bracketing_info(&file) {
+                        Ok(x) => {
+                            bracket_info = x.map(|_x| BracketInfo {
+                                // todo if EXIF sequence number info available, continue development
+                                sequence_length: 0,
+                                last_file_name: file
+                                    .file_name()
+                                    .map(|x| x.to_string_lossy().to_string())
+                                    .unwrap_or("".to_string()),
+                                first_file_name: file
+                                    .file_name()
+                                    .map(|x| x.to_string_lossy().to_string())
+                                    .unwrap_or("".to_string()),
+                                sequence_number: 0,
+                            })
+                        }
+                        Err(e) => {
+                            error!("Error processing file {:?}: {}", file, e);
+                        }
+                    }
+                }
+            }
+
+            process_file(file, &context, bracket_info.clone());
             bar.set_position(i as u64);
         }
 
@@ -327,7 +371,33 @@ pub fn main() {
         bar.finish_with_message("Finished processing files");
     } else {
         for file in files {
-            process_file(file, &context);
+            if bracket_mode {
+                bracket_info = None;
+                if let ExecutionContext::SingleThreaded(analyzer) = &context {
+                    match analyzer.analyzer.get_bracketing_info(&file) {
+                        Ok(x) => {
+                            bracket_info = x.map(|_x| BracketInfo {
+                                // todo if EXIF sequence number info available, continue development
+                                sequence_length: 0,
+                                last_file_name: file
+                                    .file_name()
+                                    .map(|x| x.to_string_lossy().to_string())
+                                    .unwrap_or("".to_string()),
+                                first_file_name: file
+                                    .file_name()
+                                    .map(|x| x.to_string_lossy().to_string())
+                                    .unwrap_or("".to_string()),
+                                sequence_number: 0,
+                            })
+                        }
+                        Err(e) => {
+                            error!("Error processing file {:?}: {}", file, e);
+                        }
+                    }
+                }
+            }
+
+            process_file(file, &context, bracket_info.clone());
         }
 
         if let Some(context) = context.multi_threading() {
@@ -366,10 +436,10 @@ impl ExecutionContext {
     }
 }
 
-fn process_file(file: PathBuf, context: &ExecutionContext) {
+fn process_file(file: PathBuf, context: &ExecutionContext, bracket_info: Option<BracketInfo>) {
     match context {
         ExecutionContext::SingleThreaded(context) => {
-            let result = context.analyzer.run_file(&file);
+            let result = context.analyzer.run_file(&file, bracket_info);
             if let Err(err) = result {
                 error!("Error processing file: {}", err);
             }
@@ -378,7 +448,7 @@ fn process_file(file: PathBuf, context: &ExecutionContext) {
             let output = context.output.clone();
             let analyzer = context.analyzer.clone();
             context.pool.execute(move || {
-                let result = analyzer.run_file(&file);
+                let result = analyzer.run_file(&file, bracket_info);
                 if let Err(err) = result {
                     error!("Error processing file: {}", err);
                 }

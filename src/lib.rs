@@ -1,6 +1,6 @@
 #![doc = include_str!("../README.md")]
 
-use crate::analysis::name_formatters::{FileType, NameFormatterInvocationInfo};
+use crate::analysis::name_formatters::{BracketInfo, FileType, NameFormatterInvocationInfo};
 use action::ActionMode;
 use anyhow::{anyhow, Result};
 use chrono::NaiveDateTime;
@@ -9,7 +9,7 @@ use log::{debug, error, info, trace, warn};
 use std::ffi::OsStr;
 use std::fs;
 use std::fs::File;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 pub mod action;
@@ -83,6 +83,7 @@ pub struct AnalyzerSettings {
     pub file_format: String,
     pub nodate_file_format: String,
     pub unknown_file_format: Option<String>,
+    pub bracketed_file_format: Option<String>,
     pub date_format: String,
     pub extensions: Vec<String>,
     #[cfg(feature = "video")]
@@ -424,6 +425,7 @@ impl Analyzer {
     /// # Arguments
     ///
     /// * `path` - A `PathBuf` that represents the path of the file to perform the action on.
+    /// * `bracket_info` - The information regarding file bracketing. Can be extracted with the `get_bracketing_info` method.
     ///
     /// # Returns
     ///
@@ -435,7 +437,7 @@ impl Analyzer {
     /// * The analysis of the file fails.
     /// * An IO error occurs while analyzing the date
     /// * An IO error occurs while doing the file action
-    pub fn run_file(&self, path: &PathBuf) -> Result<()> {
+    pub fn run_file(&self, path: &PathBuf, bracket_info: Option<BracketInfo>) -> Result<()> {
         let valid_ext = self.is_valid_extension(path.extension());
         let is_unknown_file = match valid_ext {
             Ok(false) => match self.settings.unknown_file_format {
@@ -515,6 +517,7 @@ impl Analyzer {
                 .extension()
                 .map(|ext| ext.to_string_lossy().to_string())
                 .unwrap_or("".to_owned()),
+            bracket_info: bracket_info.as_ref(),
         };
 
         let new_file_path = |file_name_info: &NameFormatterInvocationInfo| -> Result<PathBuf> {
@@ -524,6 +527,8 @@ impl Analyzer {
                     .as_ref()
                     .ok_or(anyhow!("No unknown format string specified"))?
                     .as_str()
+            } else if let Some(bracket_info) = &self.settings.bracketed_file_format {
+                bracket_info.as_str()
             } else if date.is_some() {
                 self.settings.file_format.as_str()
             } else {
@@ -617,6 +622,26 @@ impl Analyzer {
         let valid_video = false;
         Ok(valid_photo || valid_video)
     }
+
+    pub fn get_bracketing_info<P: AsRef<Path>>(
+        &self,
+        photo_path: P,
+    ) -> Result<Option<BracketEXIFInformation>> {
+        let file = std::fs::File::open(photo_path)
+            .map_err(|e| anyhow!("Error while opening file: {e}"))?;
+        let mut bufreader = std::io::BufReader::new(file);
+        let exifreader = exif::Reader::new();
+        let _exif = exifreader
+            .read_from_container(&mut bufreader)
+            .map_err(|e| anyhow!("Error while reading EXIF {e}"))?;
+
+        Ok(None)
+    }
+}
+
+pub struct BracketEXIFInformation {
+    pub sequence_length: u32,
+    pub index: u32,
 }
 
 /// Finds all files in a source directory and its subdirectories.
