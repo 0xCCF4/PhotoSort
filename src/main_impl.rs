@@ -267,14 +267,14 @@ pub fn main() {
     let mut files = Vec::new();
 
     for source_dir in &analyzer.settings.source_dirs {
-        info!("Processing source folder: {:?}", source_dir);
+        info!("Processing source folder: {}", source_dir.display());
         let result = find_files_in_source(
             source_dir.clone(),
             analyzer.settings.recursive_source,
             &mut files,
         );
         if let Err(err) = result {
-            error!("Error processing folder: {}", err);
+            error!("Error processing folder: {err}");
         }
     }
 
@@ -373,7 +373,7 @@ fn process_file(file: PathBuf, context: &ExecutionContext) {
         ExecutionContext::SingleThreaded(context) => {
             let result = context.analyzer.run_file(&file);
             if let Err(err) = result {
-                error!("Error processing file: {}", err);
+                error!("Error processing file: {err}");
             }
         }
         ExecutionContext::MultiThreaded(context) => {
@@ -382,7 +382,7 @@ fn process_file(file: PathBuf, context: &ExecutionContext) {
             context.pool.execute(move || {
                 let result = analyzer.run_file(&file);
                 if let Err(err) = result {
-                    error!("Error processing file: {}", err);
+                    error!("Error processing file: {err}");
                 }
                 output.send(()).expect("thread pool channel closed");
             });
