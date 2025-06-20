@@ -501,7 +501,6 @@ dependencies = [
  "indicatif",
  "indicatif-log-bridge",
  "kamadak-exif",
- "lazy_static",
  "log",
  "regex",
  "symlink",

@@ -65,12 +65,9 @@ impl FromStr for ActualAction {
         match s.to_lowercase().as_str() {
             "move" => Ok(ActualAction::Move),
             "copy" => Ok(ActualAction::Copy),
-            "hardlink" => Ok(ActualAction::Hardlink),
-            "hard" => Ok(ActualAction::Hardlink), // Alias for "Hardlink"
-            "relative_symlink" => Ok(ActualAction::RelativeSymlink),
-            "relsym" => Ok(ActualAction::RelativeSymlink), // Alias for "RelativeSymlink"
-            "absolute_symlink" => Ok(ActualAction::AbsoluteSymlink),
-            "abssym" => Ok(ActualAction::AbsoluteSymlink), // Alias for "AbsoluteSymlink"
+            "hardlink" | "hard" => Ok(ActualAction::Hardlink),
+            "relative_symlink" | "relsym" => Ok(ActualAction::RelativeSymlink),
+            "absolute_symlink" | "abssym" => Ok(ActualAction::AbsoluteSymlink),
             _ => Err(anyhow::anyhow!("Invalid action mode")),
         }
     }
@@ -80,9 +77,9 @@ impl FromStr for ActualAction {
 ///
 /// # Arguments
 ///
-/// * `source` - A PathBuf reference to the source file.
-/// * `target` - A PathBuf reference to the target file.
-/// * `action` - An ActionMode reference specifying the action to be performed.
+/// * `source` - A `PathBuf` reference to the source file.
+/// * `target` - A `PathBuf` reference to the target file.
+/// * `action` - An `ActionMode` reference specifying the action to be performed.
 /// * `mkdir` - Mkdir subfolders on the way, in dry-run mode no subfolders are created.
 ///
 /// # Returns
@@ -140,18 +137,20 @@ pub fn file_action(
         ActionMode::Execute(ActualAction::Hardlink) => hardlink_file(source, target),
         ActionMode::Execute(ActualAction::RelativeSymlink) => relative_symlink_file(source, target),
         ActionMode::Execute(ActualAction::AbsoluteSymlink) => absolute_symlink_file(source, target),
-        ActionMode::DryRun(action) => dry_run(source, target, action),
+        ActionMode::DryRun(action) => {
+            dry_run(source, target, *action);
+            Ok(())
+        }
     };
 
     match result {
-        Ok(_) => Ok(()),
+        Ok(()) => Ok(()),
         Err(e) => Err(anyhow!("Failed to perform action: {:?}", e)),
     }
 }
 
-fn dry_run(source: &PathBuf, target: &PathBuf, action: &ActualAction) -> std::io::Result<()> {
+fn dry_run(source: &PathBuf, target: &PathBuf, action: ActualAction) {
     error!("[{}] {:?} -> {:?}", action, source, target);
-    Ok(())
 }
 
 fn error_file_exists(target: &Path) -> std::io::Result<()> {
@@ -173,10 +172,7 @@ fn copy_file(source: &PathBuf, target: &PathBuf) -> std::io::Result<()> {
 
     if metadata.len() != result {
         let _ = fs::remove_file(target);
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "File copy failed",
-        ));
+        return Err(std::io::Error::other("File copy failed"));
     }
 
     let mtime = FileTime::from_last_modification_time(&metadata);
@@ -207,10 +203,10 @@ fn hardlink_file(source: &PathBuf, target: &PathBuf) -> std::io::Result<()> {
     debug!("Creating hardlink {:?} -> {:?}", source, target);
 
     let result = fs::hard_link(source, target);
-    if let Err(_err) = result {
+    if let Err(err) = result {
         error!(
             "Creating hardlink failed, falling back to copy: {:?} for file {:?} -> {:?}",
-            _err, source, target
+            err, source, target
         );
         copy_file(source, target)
     } else {

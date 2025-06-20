@@ -4,13 +4,13 @@ use crate::analysis::name_formatters::{FileType, NameFormatterInvocationInfo};
 use action::ActionMode;
 use anyhow::{anyhow, Result};
 use chrono::NaiveDateTime;
-use lazy_static::lazy_static;
 use log::{debug, error, info, trace, warn};
 use std::ffi::OsStr;
 use std::fs;
 use std::fs::File;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::LazyLock;
 
 pub mod action;
 pub mod analysis;
@@ -47,14 +47,10 @@ impl FromStr for AnalysisType {
 
     fn from_str(s: &str) -> Result<Self> {
         match s.to_lowercase().as_str() {
-            "only_exif" => Ok(AnalysisType::OnlyExif),
-            "exif" => Ok(AnalysisType::OnlyExif),
-            "only_name" => Ok(AnalysisType::OnlyName),
-            "name" => Ok(AnalysisType::OnlyName),
-            "exif_then_name" => Ok(AnalysisType::ExifThenName),
-            "exif_name" => Ok(AnalysisType::ExifThenName),
-            "name_then_exif" => Ok(AnalysisType::NameThenExif),
-            "name_exif" => Ok(AnalysisType::NameThenExif),
+            "only_exif" | "exif" => Ok(AnalysisType::OnlyExif),
+            "only_name" | "name" => Ok(AnalysisType::OnlyName),
+            "exif_then_name" | "exif_name" => Ok(AnalysisType::ExifThenName),
+            "name_then_exif" | "name_exif" => Ok(AnalysisType::NameThenExif),
             _ => Err(anyhow::anyhow!("Invalid analysis type")),
         }
     }
@@ -91,15 +87,19 @@ pub struct AnalyzerSettings {
     pub mkdir: bool,
 }
 
-lazy_static! {
-    static ref RE_DETECT_NAME_FORMAT_COMMAND: regex::Regex = regex::Regex::new(
-        r"\{([^\}]*)\}" // finds { ... } blocks
-    ).expect("Failed to compile regex");
+static RE_DETECT_NAME_FORMAT_COMMAND: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(
+        r"\{([^\}]*)\}", // finds { ... } blocks
+    )
+    .expect("Failed to compile regex")
+});
 
-    static ref RE_COMMAND_SPLIT: regex::Regex = regex::Regex::new(
-        r"^(([^:]*):)?(.*)$" // splits command into modifiers:command
-    ).expect("Failed to compile regex");
-}
+static RE_COMMAND_SPLIT: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(
+        r"^(([^:]*):)?(.*)$", // splits command into modifiers:command
+    )
+    .expect("Failed to compile regex")
+});
 
 /// `Analyzer` is a struct that represents an analyzer for files.
 ///
@@ -196,7 +196,7 @@ impl Analyzer {
         }
     }
 
-    fn analyze_photo_exif(&self, file: &File) -> Result<Option<NaiveDateTime>> {
+    fn analyze_photo_exif(file: &File) -> Result<Option<NaiveDateTime>> {
         let exif_time = analysis::exif2date::get_exif_time(file)?;
         Ok(exif_time)
     }
@@ -221,7 +221,7 @@ impl Analyzer {
 
         if photo {
             let file = File::open(path)?;
-            return self.analyze_photo_exif(&file);
+            return Analyzer::analyze_photo_exif(&file);
         }
         #[cfg(feature = "video")]
         if video {
@@ -314,8 +314,6 @@ impl Analyzer {
         format_string: &'b str,
         info: &'a NameFormatterInvocationInfo,
     ) -> Result<String> {
-        let detect_commands = RE_DETECT_NAME_FORMAT_COMMAND.captures_iter(format_string);
-
         #[derive(Debug)]
         enum FormatString<'a> {
             Literal(String),
@@ -324,11 +322,12 @@ impl Analyzer {
         impl FormatString<'_> {
             fn formatted_string(self) -> String {
                 match self {
-                    FormatString::Literal(str) => str,
-                    FormatString::Command(_, str) => str,
+                    FormatString::Literal(str) | FormatString::Command(_, str) => str,
                 }
             }
         }
+
+        let detect_commands = RE_DETECT_NAME_FORMAT_COMMAND.captures_iter(format_string);
 
         let mut final_string: Vec<FormatString<'b>> = Vec::new();
 
@@ -357,15 +356,9 @@ impl Analyzer {
                 .expect("Should always match");
 
             // prefix
-            let command_modifier = inner_command_capture
-                .get(2)
-                .map(|x| x.as_str())
-                .unwrap_or("");
+            let command_modifier = inner_command_capture.get(2).map_or("", |x| x.as_str());
             // cmd
-            let actual_command = inner_command_capture
-                .get(3)
-                .map(|x| x.as_str())
-                .unwrap_or("");
+            let actual_command = inner_command_capture.get(3).map_or("", |x| x.as_str());
 
             let mut found_command = false;
 
@@ -380,8 +373,7 @@ impl Analyzer {
 
                     if !command_substitution.is_empty() && !command_modifier.is_empty() {
                         // prefix_substitution
-                        command_substitution =
-                            format!("{}{}", command_modifier, command_substitution);
+                        command_substitution = format!("{command_modifier}{command_substitution}");
                     }
                     found_command = true;
                     final_string.push(FormatString::Command(
@@ -414,9 +406,8 @@ impl Analyzer {
 
         Ok(final_string
             .into_iter()
-            .map(|v| v.formatted_string())
-            .collect::<Vec<_>>()
-            .join(""))
+            .map(FormatString::formatted_string)
+            .collect::<String>())
     }
 
     /// Performs the file action specified in the `Analyzer`'s settings on a file.
@@ -435,22 +426,21 @@ impl Analyzer {
     /// * The analysis of the file fails.
     /// * An IO error occurs while analyzing the date
     /// * An IO error occurs while doing the file action
+    #[allow(clippy::too_many_lines)]
     pub fn run_file(&self, path: &PathBuf) -> Result<()> {
         let valid_ext = self.is_valid_extension(path.extension());
         let is_unknown_file = match valid_ext {
-            Ok(false) => match self.settings.unknown_file_format {
-                None => {
+            Ok(false) => {
+                if self.settings.unknown_file_format.is_none() {
                     info!(
                         "Skipping file because extension is not in the list: {:?}",
                         path
                     );
                     return Ok(());
                 }
-                Some(_) => {
-                    debug!("Processing unknown file: {:?}", path);
-                    true
-                }
-            },
+                debug!("Processing unknown file: {:?}", path);
+                true
+            }
             Ok(true) => {
                 debug!("Processing file: {:?}", path);
                 false
@@ -461,7 +451,17 @@ impl Analyzer {
             }
         };
 
-        let (date, cleaned_name) = if !is_unknown_file {
+        let (date, cleaned_name) = if is_unknown_file {
+            (
+                None,
+                path.with_extension("")
+                    .file_name()
+                    .ok_or(anyhow::anyhow!("No file name"))?
+                    .to_str()
+                    .ok_or(anyhow::anyhow!("Invalid file name"))?
+                    .to_string(),
+            )
+        } else {
             let (date, cleaned_name) = self.analyze(path).map_err(|err| {
                 error!("Error extracting date: {}", err);
                 err
@@ -478,16 +478,6 @@ impl Analyzer {
             }
 
             (date, cleaned_name)
-        } else {
-            (
-                None,
-                path.with_extension("")
-                    .file_name()
-                    .ok_or(anyhow::anyhow!("No file name"))?
-                    .to_str()
-                    .ok_or(anyhow::anyhow!("Invalid file name"))?
-                    .to_string(),
-            )
         };
 
         let date_string = match date {
@@ -513,8 +503,7 @@ impl Analyzer {
             duplicate_counter: None,
             extension: path
                 .extension()
-                .map(|ext| ext.to_string_lossy().to_string())
-                .unwrap_or("".to_owned()),
+                .map_or(String::new(), |ext| ext.to_string_lossy().to_string()),
         };
 
         let new_file_path = |file_name_info: &NameFormatterInvocationInfo| -> Result<PathBuf> {
@@ -543,7 +532,7 @@ impl Analyzer {
 
             let mut target_path = self.settings.target_dir.clone();
             for path_component in path_split {
-                let component = path_component.replace("/", "").replace("\\", "");
+                let component = path_component.replace(['/', '\\'], "");
                 if component != ".." {
                     target_path.push(component);
                 }

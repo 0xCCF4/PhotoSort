@@ -1,16 +1,16 @@
-# PhotoSort
+# `PhotoSort`
 
-PhotoSort is a robust command-line tool written in Rust, designed to streamline the organization of your photo/video
+`PhotoSort` is a robust command-line tool written in Rust, designed to streamline the organization of your photo/video
 collections. It works by sourcing images/videos from a source directory, extracting the date from either the file name or
 its EXIF/metadata data, and then moving or copying the file to a target directory.
 
-PhotoSort solves the problem of having pictures/videos from different cameras and devices that use
+`PhotoSort` solves the problem of having pictures/videos from different cameras and devices that use
 different naming conventions to name created files. When viewing the photos/videos in a file browser
-this can be confusing, as the photos/videos are not sorted by date. PhotoSort solves this problem by
+this can be confusing, as the photos/videos are not sorted by date. `PhotoSort` solves this problem by
 renaming images/videos based on their EXIF/metadata data or file name, unifying the naming convention and making
 to go through the photos/videos by date.
 
-The documentation can be found here: https://docs.rs/photo_sort
+The documentation can be found here: <https://docs.rs/photo_sort>
 
 ## Features
 
@@ -18,14 +18,14 @@ The documentation can be found here: https://docs.rs/photo_sort
 - **Analysis Mode**: Choose how you want to extract the date from your files. Only EXIF, only name, or a combination.
 - **Move Mode**: Choose how you want to move the files to the target directory. Options are moving, coping, hardlinking,
   symlinking, or relative symlinking.
-- **Recursive Source Directory**: PhotoSort can search the source directories recursively.
+- **Recursive Source Directory**: `PhotoSort` can search the source directories recursively.
 - **Dry Run Mode**: Test the tool without making any changes to your files. The tool will print the actions it would
   take without actually executing them.
-- **Sort photos and videos**: PhotoSort can sort both photos and videos by their metadata.
+- **Sort photos and videos**: `PhotoSort` can sort both photos and videos by their metadata.
 
 ## Usage
 
-To use PhotoSort, you need to pass in a set of arguments to define how you want to sort your photos. Here is an example:
+To use `PhotoSort`, you need to pass in a set of arguments to define how you want to sort your photos. Here is an example:
 
 ```bash
 photo_sort \
@@ -158,7 +158,7 @@ When building with video support enabled (see below):
 
 ## Installation
 
-To install PhotoSort, you need to have Cargo installed on your system.
+To install `PhotoSort`, you need to have Cargo installed on your system.
 
 ```bash
 cargo install photo_sort
@@ -192,7 +192,7 @@ cargo install --features video --path .
 
 ## Contributing
 
-Contributions to PhotoSort are welcome! If you have a feature request, bug report, or want to contribute to the code,
+Contributions to `PhotoSort` are welcome! If you have a feature request, bug report, or want to contribute to the code,
 please open an issue or a pull request.
 
 ### Something works differently than expected?
@@ -206,4 +206,4 @@ photo_sort --debug --source_dir /path/to/photos --target_dir /path/to/sorted_pho
 
 ## License
 
-PhotoSort is licensed under the GPLv3 license. See the LICENSE file for more details.
+`PhotoSort` is licensed under the GPLv3 license. See the LICENSE file for more details.

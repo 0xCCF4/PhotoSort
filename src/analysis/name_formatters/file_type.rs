@@ -1,13 +1,12 @@
 use crate::analysis::name_formatters::{FileType, NameFormatter, NameFormatterInvocationInfo};
 use anyhow::Result;
-use lazy_static::lazy_static;
 use regex::Regex;
+use std::sync::LazyLock;
 
-lazy_static! {
-    static ref FILE_TYPE_FORMAT: regex::Regex =
-        regex::Regex::new(r"^(ftype|type|t)(\?(([^,\n]*)(,([^,\n]*))?))?$")
-            .expect("Failed to compile regex");
-}
+static FILE_TYPE_FORMAT: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"^(ftype|type|t)(\?(([^,\n]*)(,([^,\n]*))?))?$")
+        .expect("Failed to compile regex")
+});
 
 /// Formats a file type format command {ftype} to a file type string.
 #[derive(Debug, Default)]
