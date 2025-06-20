@@ -47,6 +47,6 @@ pub fn clean_image_name(name: &str) -> String {
             }
         }
     };
-    trace!("Cleaned name: {:?} -> {:?}", name, result);
+    trace!("Cleaned name: {name:?} -> {result:?}");
     result
 }

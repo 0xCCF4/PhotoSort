@@ -8,7 +8,7 @@ use log::{debug, error, info, trace, warn};
 use std::ffi::OsStr;
 use std::fs;
 use std::fs::File;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::LazyLock;
 
@@ -207,7 +207,9 @@ impl Analyzer {
         Ok(video_time)
     }
 
-    fn analyze_exif(&self, path: &PathBuf) -> Result<Option<NaiveDateTime>> {
+    fn analyze_exif<A: AsRef<Path>>(&self, path: A) -> Result<Option<NaiveDateTime>> {
+        let path = path.as_ref();
+
         #[cfg(feature = "video")]
         let video = self.is_valid_video_extension(path.extension())?;
         let photo = self.is_valid_photo_extension(path.extension())?;
@@ -246,7 +248,9 @@ impl Analyzer {
     /// * The file name cannot be retrieved or is invalid.
     /// * The file cannot be opened.
     /// * An error occurs during the analysis of the file's Exif data or name.
-    pub fn analyze(&self, path: &PathBuf) -> Result<(Option<NaiveDateTime>, String)> {
+    pub fn analyze<A: AsRef<Path>>(&self, path: A) -> Result<(Option<NaiveDateTime>, String)> {
+        let path = path.as_ref();
+
         let name = path
             .file_name()
             .ok_or(anyhow::anyhow!("No file name"))?
@@ -256,11 +260,11 @@ impl Analyzer {
         let valid_extension = self
             .is_valid_extension(path.extension())
             .unwrap_or_else(|err| {
-                warn!("Error checking file extension: {}", err);
+                warn!("Error checking file extension: {err}");
                 false
             });
         if !valid_extension {
-            warn!("Skipping file with invalid extension: {:?}", path);
+            warn!("Skipping file with invalid extension: {}", path.display());
             return Err(anyhow::anyhow!("Invalid file extension"));
         }
 
@@ -281,7 +285,7 @@ impl Analyzer {
                 let exif_result = self.analyze_exif(path);
                 let exif_result = match exif_result {
                     Err(e) => {
-                        warn!("Error analyzing Exif data: {} for {:?}", e, path);
+                        warn!("Error analyzing Exif data: {} for {}", e, path.display());
                         info!("Falling back to name analysis");
                         None
                     }
@@ -396,11 +400,11 @@ impl Analyzer {
             ));
         }
 
-        trace!("Parsed format string {:?} to", format_string);
+        trace!("Parsed format string {format_string:?} to");
         for part in &final_string {
             match part {
-                FormatString::Literal(str) => trace!(" - Literal: {:?}", str),
-                FormatString::Command(cmd, str) => trace!(" - Command: {:?}\t{:?}", cmd, str),
+                FormatString::Literal(str) => trace!(" - Literal: {str:?}"),
+                FormatString::Command(cmd, str) => trace!(" - Command: {cmd:?}\t{str:?}"),
             }
         }
 
@@ -433,20 +437,20 @@ impl Analyzer {
             Ok(false) => {
                 if self.settings.unknown_file_format.is_none() {
                     info!(
-                        "Skipping file because extension is not in the list: {:?}",
-                        path
+                        "Skipping file because extension is not in the list: {}",
+                        path.display()
                     );
                     return Ok(());
                 }
-                debug!("Processing unknown file: {:?}", path);
+                debug!("Processing unknown file: {}", path.display());
                 true
             }
             Ok(true) => {
-                debug!("Processing file: {:?}", path);
+                debug!("Processing file: {}", path.display());
                 false
             }
             Err(err) => {
-                warn!("Error checking file extension: {}", err);
+                warn!("Error checking file extension: {err}");
                 return Ok(());
             }
         };
@@ -463,18 +467,15 @@ impl Analyzer {
             )
         } else {
             let (date, cleaned_name) = self.analyze(path).map_err(|err| {
-                error!("Error extracting date: {}", err);
+                error!("Error extracting date: {err}");
                 err
             })?;
             let cleaned_name = name::clean_image_name(cleaned_name.as_str());
 
-            debug!(
-                "Analysis results: Date: {:?}, Cleaned name: {:?}",
-                date, cleaned_name
-            );
+            debug!("Analysis results: Date: {date:?}, Cleaned name: {cleaned_name:?}",);
 
             if date.is_none() {
-                warn!("No date was derived for file {:?}.", path);
+                warn!("No date was derived for file {}.", path.display());
             }
 
             (date, cleaned_name)
@@ -544,14 +545,14 @@ impl Analyzer {
         let mut dup_counter = 0;
 
         while new_path.exists() {
-            debug!("Target file already exists: {:?}", new_path);
+            debug!("Target file already exists: {}", new_path.display());
             dup_counter += 1;
             file_name_info.duplicate_counter = Some(dup_counter);
             new_path = new_file_path(&file_name_info)?;
         }
 
         if dup_counter > 0 {
-            info!("De-duplicated target file: {:?}", new_path);
+            info!("De-duplicated target file: {}", new_path.display());
         }
 
         action::file_action(
@@ -629,11 +630,11 @@ pub fn find_files_in_source(
         let path = entry.path();
         if path.is_dir() {
             if recursive {
-                debug!("Processing subfolder: {:?}", path);
+                debug!("Processing subfolder: {}", path.display());
                 find_files_in_source(path, recursive, result)?;
             }
         } else {
-            trace!("Found file: {:?}", &path);
+            trace!("Found file: {}", path.display());
             result.push(path);
         }
     }

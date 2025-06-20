@@ -122,7 +122,7 @@ pub fn file_action(
             }
 
             if matches!(action, ActionMode::DryRun(_)) {
-                error!("[Mkdir] {:?}", parent);
+                error!("[Mkdir] {}", parent.display());
             } else {
                 fs::create_dir_all(parent).map_err(|e| {
                     anyhow!("Failed to create target subfolder: {:?} - {:?}", parent, e)
@@ -149,8 +149,13 @@ pub fn file_action(
     }
 }
 
-fn dry_run(source: &PathBuf, target: &PathBuf, action: ActualAction) {
-    error!("[{}] {:?} -> {:?}", action, source, target);
+fn dry_run<A: AsRef<Path>, B: AsRef<Path>>(source: A, target: B, action: ActualAction) {
+    error!(
+        "[{}] {} -> {}",
+        action,
+        source.as_ref().display(),
+        target.as_ref().display()
+    );
 }
 
 fn error_file_exists(target: &Path) -> std::io::Result<()> {
@@ -164,8 +169,11 @@ fn error_file_exists(target: &Path) -> std::io::Result<()> {
     }
 }
 
-fn copy_file(source: &PathBuf, target: &PathBuf) -> std::io::Result<()> {
-    debug!("Copying {:?} -> {:?}", source, target);
+fn copy_file<A: AsRef<Path>, B: AsRef<Path>>(source: A, target: B) -> std::io::Result<()> {
+    let source = source.as_ref();
+    let target = target.as_ref();
+
+    debug!("Copying {} -> {}", source.display(), target.display());
 
     let metadata = fs::metadata(source)?;
     let result = fs::copy(source, target)?;
@@ -183,14 +191,19 @@ fn copy_file(source: &PathBuf, target: &PathBuf) -> std::io::Result<()> {
     Ok(())
 }
 
-fn move_file(source: &PathBuf, target: &PathBuf) -> std::io::Result<()> {
-    debug!("Moving {:?} -> {:?}", source, target);
+fn move_file<A: AsRef<Path>, B: AsRef<Path>>(source: A, target: B) -> std::io::Result<()> {
+    let source = source.as_ref();
+    let target = target.as_ref();
+
+    debug!("Moving {} -> {}", source.display(), target.display());
 
     let result = fs::rename(source, target);
     if let Err(err) = result {
         warn!(
-            "Renaming file failed, falling back to cut/paste: {:?} for file {:?} -> {:?}",
-            err, source, target
+            "Renaming file failed, falling back to cut/paste: {:?} for file {} -> {}",
+            err,
+            source.display(),
+            target.display()
         );
         copy_file(source, target)?;
         fs::remove_file(source)
@@ -199,14 +212,23 @@ fn move_file(source: &PathBuf, target: &PathBuf) -> std::io::Result<()> {
     }
 }
 
-fn hardlink_file(source: &PathBuf, target: &PathBuf) -> std::io::Result<()> {
-    debug!("Creating hardlink {:?} -> {:?}", source, target);
+fn hardlink_file<A: AsRef<Path>, B: AsRef<Path>>(source: A, target: B) -> std::io::Result<()> {
+    let source = source.as_ref();
+    let target = target.as_ref();
+
+    debug!(
+        "Creating hardlink {} -> {}",
+        source.display(),
+        target.display()
+    );
 
     let result = fs::hard_link(source, target);
     if let Err(err) = result {
         error!(
-            "Creating hardlink failed, falling back to copy: {:?} for file {:?} -> {:?}",
-            err, source, target
+            "Creating hardlink failed, falling back to copy: {:?} for file {} -> {}",
+            err,
+            source.display(),
+            target.display()
         );
         copy_file(source, target)
     } else {
@@ -214,16 +236,36 @@ fn hardlink_file(source: &PathBuf, target: &PathBuf) -> std::io::Result<()> {
     }
 }
 
-fn relative_symlink_file(source: &PathBuf, target: &PathBuf) -> std::io::Result<()> {
-    debug!("Creating symlink {:?} -> {:?}", source, target);
+fn relative_symlink_file<A: AsRef<Path>, B: AsRef<Path>>(
+    source: A,
+    target: B,
+) -> std::io::Result<()> {
+    let source = source.as_ref();
+    let target = target.as_ref();
+
+    debug!(
+        "Creating symlink {} -> {}",
+        source.display(),
+        target.display()
+    );
 
     symlink::symlink_file(source, target)?;
 
     Ok(())
 }
 
-fn absolute_symlink_file(source: &PathBuf, target: &PathBuf) -> std::io::Result<()> {
-    debug!("Creating symlink {:?} -> {:?}", source, target);
+fn absolute_symlink_file<A: AsRef<Path>, B: AsRef<Path>>(
+    source: A,
+    target: B,
+) -> std::io::Result<()> {
+    let source = source.as_ref();
+    let target = target.as_ref();
+
+    debug!(
+        "Creating symlink {} -> {}",
+        source.display(),
+        target.display()
+    );
     let source = fs::canonicalize(source)?;
 
     relative_symlink_file(&source, target)

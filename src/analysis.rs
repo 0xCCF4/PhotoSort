@@ -43,7 +43,7 @@ pub fn get_name_time(
             Ok(Some((dt, name))) => return Ok(Some((dt, name))),
             Ok(None) => {}
             Err(e) => {
-                log::error!("Error: {:?}", e);
+                log::error!("Error: {e:?}");
             }
         }
     }

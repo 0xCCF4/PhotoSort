@@ -94,7 +94,7 @@ pub trait FileNameToDateTransformer {
                 Ok(Some(dt)) => return Ok(Some((dt, name.replace(matched, "")))),
                 Ok(None) => {}
                 Err(e) => {
-                    log::error!("Error: {:?}", e);
+                    log::error!("Error: {e:?}");
                 }
             }
         }
