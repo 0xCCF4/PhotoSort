@@ -1,9 +1,11 @@
 #![doc = include_str!("../README.md")]
 
 use crate::analysis::name_formatters::{BracketInfo, FileType, NameFormatterInvocationInfo};
+use crate::exifutils::LittleEndian;
 use action::ActionMode;
 use anyhow::{anyhow, Result};
 use chrono::NaiveDateTime;
+use exif::Context;
 use log::{debug, error, info, trace, warn};
 use std::ffi::OsStr;
 use std::fs;
@@ -90,7 +92,7 @@ pub struct AnalyzerSettings {
 
 static RE_DETECT_NAME_FORMAT_COMMAND: LazyLock<regex::Regex> = LazyLock::new(|| {
     regex::Regex::new(
-        r"\{([^\}]*)\}", // finds { ... } blocks
+        r"\{([^}]*)}", // finds { ... } blocks
     )
     .expect("Failed to compile regex")
 });
@@ -517,7 +519,9 @@ impl Analyzer {
                     .as_ref()
                     .ok_or(anyhow!("No unknown format string specified"))?
                     .as_str()
-            } else if let Some(bracket_info) = &self.settings.bracketed_file_format {
+            } else if let (Some(bracket_info), Some(_)) =
+                (&self.settings.bracketed_file_format, &bracket_info)
+            {
                 bracket_info.as_str()
             } else if date.is_some() {
                 self.settings.file_format.as_str()
@@ -621,16 +625,46 @@ impl Analyzer {
             .map_err(|e| anyhow!("Error while opening file: {e}"))?;
         let mut bufreader = std::io::BufReader::new(file);
         let exifreader = exif::Reader::new();
-        let _exif = exifreader
+        let exif = exifreader
             .read_from_container(&mut bufreader)
             .map_err(|e| anyhow!("Error while reading EXIF {e}"))?;
+
+        let x = match exif.get_field(exif::Tag::MakerNote, exif::In::PRIMARY) {
+            Some(field) => field,
+            None => return Ok(None),
+        };
+        let value = match &x.value {
+            exif::Value::Undefined(data, _) => data,
+            _ => return Ok(None),
+        };
+
+        if value.starts_with("SONY DSC \0\0\0".as_bytes())
+            || value.starts_with("SONY CAM \0\0\0".as_bytes())
+        {
+            let maker_note = exifutils::parse_ifd::<LittleEndian>(value, 12, Context::Exif, 0)?;
+
+            let sequence_number = match maker_note.get(&0xb04a) {
+                None => return Ok(None),
+                Some(field) => match field.value.as_uint()?.get(0) {
+                    Some(v) => v,
+                    None => return Ok(None),
+                },
+            };
+
+            if sequence_number > 0 {
+                return Ok(Some(BracketEXIFInformation {
+                    index: sequence_number,
+                }));
+            }
+        }
 
         Ok(None)
     }
 }
 
+mod exifutils;
+
 pub struct BracketEXIFInformation {
-    pub sequence_length: u32,
     pub index: u32,
 }
 

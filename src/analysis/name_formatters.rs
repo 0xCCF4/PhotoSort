@@ -24,9 +24,6 @@ pub struct NameFormatterInvocationInfo<'a> {
 #[derive(Debug, Clone)]
 pub struct BracketInfo {
     pub sequence_number: u32,
-    pub sequence_length: u32,
-    pub first_file_name: String,
-    pub last_file_name: String,
 }
 
 pub trait NameFormatter {

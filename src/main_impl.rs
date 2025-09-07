@@ -65,12 +65,11 @@ struct Arguments {
     /// The target file format for files that can be identified as bracketed photo set with different exposure levels. By using `--bracketed` all
     /// files identified as bracketed are moved to this folder instead of the one specified by `--target-dir`. The photo's date will be extracted from the
     /// first bracketed photo in the sequence.
-    /// The sequence number can be accessed with the format specifier `{bracket?seq}`. The name of the
-    /// first photo in the sequence can be accessed by `{bracket?name}`/`{bracket?name_first}`. The name of the last photo in the sequence.
-    /// can be accessed with `{bracket?name_last}`. The length of the sequence can be accessed with `{bracket?length}`.
+    /// The sequence number can be accessed with the format specifier `{bracket}`.
     /// Bracketed photos sequences are detected via EXIF information. The file of a sequence are expected to be adjacent to each other
     /// (when listing the source directory in name-ascending-order). Note that using the `--bracketed` option requires each file to
     /// be analyzed using the EXIF analyzer even if Analysis type is set to Name-only.
+    /// Currently only works for Sony's cameras. Feel free to open an issue requesting support for other vendors.
     #[arg(long = "bracket")]
     bracketed_file_format: Option<String>,
     /// If the file format contains a "/", indicating that the file should be placed in a subdirectory,
@@ -275,7 +274,7 @@ pub fn main() {
     analyzer.add_formatter(photo_sort::analysis::name_formatters::FormatDate::default());
     analyzer.add_formatter(photo_sort::analysis::name_formatters::FormatFileType::default());
     analyzer.add_formatter(photo_sort::analysis::name_formatters::FormatExtension::default());
-    // analyzer.add_formatter(photo_sort::analysis::name_formatters::BracketedFormat::default());
+    analyzer.add_formatter(photo_sort::analysis::name_formatters::BracketedFormat::default());
 
     debug!("Running program");
 
@@ -332,18 +331,8 @@ pub fn main() {
                 if let ExecutionContext::SingleThreaded(analyzer) = &context {
                     match analyzer.analyzer.get_bracketing_info(&file) {
                         Ok(x) => {
-                            bracket_info = x.map(|_x| BracketInfo {
-                                // todo if EXIF sequence number info available, continue development
-                                sequence_length: 0,
-                                last_file_name: file
-                                    .file_name()
-                                    .map(|x| x.to_string_lossy().to_string())
-                                    .unwrap_or("".to_string()),
-                                first_file_name: file
-                                    .file_name()
-                                    .map(|x| x.to_string_lossy().to_string())
-                                    .unwrap_or("".to_string()),
-                                sequence_number: 0,
+                            bracket_info = x.map(|x| BracketInfo {
+                                sequence_number: x.index,
                             })
                         }
                         Err(e) => {
@@ -378,18 +367,8 @@ pub fn main() {
                 if let ExecutionContext::SingleThreaded(analyzer) = &context {
                     match analyzer.analyzer.get_bracketing_info(&file) {
                         Ok(x) => {
-                            bracket_info = x.map(|_x| BracketInfo {
-                                // todo if EXIF sequence number info available, continue development
-                                sequence_length: 0,
-                                last_file_name: file
-                                    .file_name()
-                                    .map(|x| x.to_string_lossy().to_string())
-                                    .unwrap_or("".to_string()),
-                                first_file_name: file
-                                    .file_name()
-                                    .map(|x| x.to_string_lossy().to_string())
-                                    .unwrap_or("".to_string()),
-                                sequence_number: 0,
+                            bracket_info = x.map(|x| BracketInfo {
+                                sequence_number: x.index,
                             })
                         }
                         Err(e) => {
