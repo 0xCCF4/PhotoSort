@@ -41,10 +41,9 @@ pub fn get_name_time(
         let result = transformer.try_transform_name(name);
         match result {
             Ok(Some((dt, name))) => return Ok(Some((dt, name))),
-            Ok(None) => continue,
+            Ok(None) => {}
             Err(e) => {
-                log::error!("Error: {:?}", e);
-                continue;
+                log::error!("Error: {e:?}");
             }
         }
     }

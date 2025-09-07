@@ -1,26 +1,28 @@
-use lazy_static::lazy_static;
 use log::trace;
 use regex::Regex;
+use std::sync::LazyLock;
 
-// Regular expressions for matching and cleaning image names.
-lazy_static! {
-    /// Matches image names with optional prefixes and suffixes.
-    ///
-    /// This regex matches image names that optionally start with "IMG", "img", "NO_DATE", or "no_date", "VID", "vid", "MOV", "mov",
-    /// followed by any characters, and ending with a file extension.
-    static ref RE_IMAGE_NAME: Regex = Regex::new(r"^((MOV|VID|mov|vid|IMG|img|NO_?DATE|no_?date)?[-_]*)*(.*?)[-_]*?\.([A-Za-z0-9]+)$").expect("Failed to compile regex");
+/// Matches image names with optional prefixes and suffixes.
+///
+/// This regex matches image names that optionally start with `IMG`, `img`, `NO_DATE`, or `no_date`, `VID`, `vid`, `MOV`, `mov`,
+/// followed by any characters, and ending with a file extension.
+static RE_IMAGE_NAME: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^((MOV|VID|mov|vid|IMG|img|NO_?DATE|no_?date)?[-_]*)*(.*?)[-_]*?\.([A-Za-z0-9]+)$")
+        .expect("Failed to compile regex")
+});
 
-    /// Matches and removes file extensions.
-    ///
-    /// This regex matches any sequence of characters followed by a period and one or more alphabetic characters,
-    /// effectively matching file extensions for removal.
-    static ref RE_REMOVE_EXT: Regex = Regex::new(r"\.[A-Za-z]+$").expect("Failed to compile regex");
+/// Matches and removes file extensions.
+///
+/// This regex matches any sequence of characters followed by a period and one or more alphabetic characters,
+/// effectively matching file extensions for removal.
+static RE_REMOVE_EXT: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\.[A-Za-z]+$").expect("Failed to compile regex"));
 
-    /// Matches and removes "NO_DATE" or "no_date" from image names.
-    ///
-    /// This regex matches "NO_DATE" or "no_date", with or without an underscore, for removal from image names.
-    static ref RE_REMOVE_NODATE: Regex = Regex::new(r"(NO_?DATE|no_?date)").expect("Failed to compile regex");
-}
+/// Matches and removes `NO_DATE` or `no_date` from image names.
+///
+/// This regex matches `NO_DATE` or `no_date`, with or without an underscore, for removal from image names.
+static RE_REMOVE_NODATE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(NO_?DATE|no_?date)").expect("Failed to compile regex"));
 
 /// Cleans an image name by removing certain prefixes, suffixes, and file extensions.
 ///
@@ -45,6 +47,6 @@ pub fn clean_image_name(name: &str) -> String {
             }
         }
     };
-    trace!("Cleaned name: {:?} -> {:?}", name, result);
+    trace!("Cleaned name: {name:?} -> {result:?}");
     result
 }

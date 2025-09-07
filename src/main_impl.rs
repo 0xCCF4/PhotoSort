@@ -20,6 +20,7 @@ use threadpool::ThreadPool;
 from the EXIF data or file name and renames the image file according to a given
 format string."
 )]
+#[allow(clippy::struct_excessive_bools)]
 struct Arguments {
     /// The source directory to read the photos from.
     #[arg(short, long, num_args = 1.., required = true)]
@@ -32,15 +33,15 @@ struct Arguments {
     #[arg(short, long, default_value = "false")]
     recursive: bool,
     /// Date format string to use as default date format.
-    /// See [https://docs.rs/chrono/latest/chrono/format/strftime/index.html] for more information.
+    /// See <https://docs.rs/chrono/latest/chrono/format/strftime/index.html> for more information.
     #[arg(long, default_value = "%Y%m%d-%H%M%S")]
     date_format: String,
     /// The target file format. Everything outside a {...} block is copied as is. The target file format may contain "/" to
     /// indicate that the file should be placed in a subdirectory. Use the `--mkdir` flag to create the subdirectories.
     /// `{name}` is replaced with a filename without the date part.
     /// `{dup}` is replaced with a number if a file with the target name already exists.
-    /// `{date}` is replaced with the date string, formatted according to the date_format parameter.
-    /// `{date?format}` is replaced with the date string, formatted according to the "format" parameter. See [https://docs.rs/chrono/latest/chrono/format/strftime/index.html] for more information.
+    /// `{date}` is replaced with the date string, formatted according to the `date_format` parameter.
+    /// `{date?format}` is replaced with the date string, formatted according to the "format" parameter. See <https://docs.rs/chrono/latest/chrono/format/strftime/index.html> for more information.
     /// `{type}` is replaced with MOV or IMG.
     /// `{type?img,vid}` is replaced with `img` if the file is an image, `vid` if the file is a video. Note that, when using other types than IMG or MOV,
     /// and rerunning the program again, the custom type will be seen as part of the file name.
@@ -83,12 +84,12 @@ struct Arguments {
     /// A comma separated list of video extensions to include in the analysis.
     #[arg(long, default_value = "mp4,mov,avi", value_delimiter = ',', num_args = 0..)]
     video_extensions: Vec<String>,
-    /// The sorting mode, possible values are name_then_exif, exif_then_name, only_name, only_exif.
+    /// The sorting mode, possible values are `name_then_exif`, `exif_then_name`, `only_name`, `only_exif`.
     /// Name analysis tries to extract the date from the file name, Exif analysis tries to extract the date from the EXIF data.
     #[arg(short, long, default_value = "exif_then_name")]
     analysis_mode: AnalysisType,
-    /// The action mode, possible values are move, copy, hardlink, relative_symlink, absolute_symlink.
-    /// Move will move the files, Copy will copy the files, Hardlink (alias: hard) will create hardlinks, RelativeSymlink (alias: relsym) will create relative symlinks, AbsoluteSymlink (alias: abssym) will create absolute symlinks.
+    /// The action mode, possible values are `move`, `copy`, `hardlink`, `relative_symlink`, `absolute_symlink`.
+    /// `Move` will move the files, `Copy` will copy the files, `Hardlink` (alias: `hard`) will create hardlinks, `RelativeSymlink` (alias: `relsym`) will create relative symlinks, `AbsoluteSymlink` (alias: `abssym`) will create absolute symlinks.
     #[arg(short, long, default_value = "move")]
     move_mode: action::ActualAction,
     /// Dry-run
@@ -131,8 +132,8 @@ fn setup_loggers<Q: AsRef<Path>>(
         config = config.chain(
             fern::Dispatch::new()
                 .format(move |out, message, record| {
-                    if message.to_string().starts_with("[") {
-                        out.finish(format_args!("{}", message))
+                    if message.to_string().starts_with('[') {
+                        out.finish(format_args!("{message}"));
                     } else {
                         out.finish(format_args!(
                             "[{} {} {}] {}",
@@ -140,7 +141,7 @@ fn setup_loggers<Q: AsRef<Path>>(
                             record.level(),
                             record.target(),
                             message
-                        ))
+                        ));
                     }
                 })
                 .chain(
@@ -154,8 +155,8 @@ fn setup_loggers<Q: AsRef<Path>>(
         .chain(
             fern::Dispatch::new()
                 .format(move |out, message, record| {
-                    if message.to_string().starts_with("[") {
-                        out.finish(format_args!("{}", message))
+                    if message.to_string().starts_with('[') {
+                        out.finish(format_args!("{message}"));
                     } else {
                         out.finish(format_args!(
                             "[{} {} {}] {}",
@@ -163,7 +164,7 @@ fn setup_loggers<Q: AsRef<Path>>(
                             colors.color(record.level()),
                             record.target(),
                             message
-                        ))
+                        ));
                     }
                 })
                 .level(stdout_log_level)
@@ -185,6 +186,7 @@ fn setup_loggers<Q: AsRef<Path>>(
     Ok(())
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn main() {
     let args = Arguments::parse();
 
@@ -224,7 +226,7 @@ pub fn main() {
         args.logfile,
         multi_clone,
     ) {
-        eprintln!("Error starting application: {:?}", e);
+        eprintln!("Error starting application: {e:?}");
         return;
     }
 
@@ -259,7 +261,7 @@ pub fn main() {
             a
         }
         Err(e) => {
-            eprintln!("{:?}", e);
+            eprintln!("{e:?}");
             return;
         }
     };
@@ -280,14 +282,14 @@ pub fn main() {
     let mut files = Vec::new();
 
     for source_dir in &analyzer.settings.source_dirs {
-        info!("Processing source folder: {:?}", source_dir);
+        info!("Processing source folder: {}", source_dir.display());
         let result = find_files_in_source(
             source_dir.clone(),
             analyzer.settings.recursive_source,
             &mut files,
         );
         if let Err(err) = result {
-            error!("Error processing folder: {}", err);
+            error!("Error processing folder: {err}");
         }
     }
 
@@ -323,7 +325,7 @@ pub fn main() {
         multi.add(bar.clone());
 
         for (i, file) in files.into_iter().enumerate() {
-            bar.set_message(format!("{:?}", file));
+            bar.set_message(format!("{}", file.display()));
 
             if bracket_mode {
                 bracket_info = None;
@@ -358,13 +360,13 @@ pub fn main() {
         if let Some(context) = context.multi_threading() {
             bar.set_position(0);
             let mut count = 0;
-            for (i, _) in context.iter().take(jobs).enumerate() {
+            for (i, ()) in context.iter().take(jobs).enumerate() {
                 bar.set_position(i as u64);
                 count += 1;
             }
 
             if count != jobs {
-                error!("Not all jobs got executed")
+                error!("Not all jobs got executed");
             }
         }
 
@@ -402,7 +404,7 @@ pub fn main() {
 
         if let Some(context) = context.multi_threading() {
             if context.iter().take(jobs).count() != jobs {
-                error!("Not all jobs got executed")
+                error!("Not all jobs got executed");
             }
         }
     }
@@ -441,7 +443,7 @@ fn process_file(file: PathBuf, context: &ExecutionContext, bracket_info: Option<
         ExecutionContext::SingleThreaded(context) => {
             let result = context.analyzer.run_file(&file, bracket_info);
             if let Err(err) = result {
-                error!("Error processing file: {}", err);
+                error!("Error processing file: {err}");
             }
         }
         ExecutionContext::MultiThreaded(context) => {
@@ -450,10 +452,10 @@ fn process_file(file: PathBuf, context: &ExecutionContext, bracket_info: Option<
             context.pool.execute(move || {
                 let result = analyzer.run_file(&file, bracket_info);
                 if let Err(err) = result {
-                    error!("Error processing file: {}", err);
+                    error!("Error processing file: {err}");
                 }
-                output.send(()).expect("thread pool channel closed")
-            })
+                output.send(()).expect("thread pool channel closed");
+            });
         }
     }
 }

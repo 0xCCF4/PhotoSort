@@ -31,6 +31,18 @@ pub struct BracketInfo {
 
 pub trait NameFormatter {
     fn argument_template(&self) -> &Regex;
+
+    /// Computes the target text for a given format string command (matched by the regex).
+    ///
+    /// # Arguments
+    /// * `matched` - The regex captures from the matched format string.
+    /// * `invocation_info` - Information about the file to format
+    ///
+    /// # Returns
+    /// A `Result<String>` containing the formatted text or an error if the formatting fails.
+    ///
+    /// # Errors
+    /// If the formatting fails, an `anyhow::Error` is returned.
     fn replacement_text(
         &self,
         matched: regex::Captures,

@@ -65,12 +65,9 @@ impl FromStr for ActualAction {
         match s.to_lowercase().as_str() {
             "move" => Ok(ActualAction::Move),
             "copy" => Ok(ActualAction::Copy),
-            "hardlink" => Ok(ActualAction::Hardlink),
-            "hard" => Ok(ActualAction::Hardlink), // Alias for "Hardlink"
-            "relative_symlink" => Ok(ActualAction::RelativeSymlink),
-            "relsym" => Ok(ActualAction::RelativeSymlink), // Alias for "RelativeSymlink"
-            "absolute_symlink" => Ok(ActualAction::AbsoluteSymlink),
-            "abssym" => Ok(ActualAction::AbsoluteSymlink), // Alias for "AbsoluteSymlink"
+            "hardlink" | "hard" => Ok(ActualAction::Hardlink),
+            "relative_symlink" | "relsym" => Ok(ActualAction::RelativeSymlink),
+            "absolute_symlink" | "abssym" => Ok(ActualAction::AbsoluteSymlink),
             _ => Err(anyhow::anyhow!("Invalid action mode")),
         }
     }
@@ -80,9 +77,9 @@ impl FromStr for ActualAction {
 ///
 /// # Arguments
 ///
-/// * `source` - A PathBuf reference to the source file.
-/// * `target` - A PathBuf reference to the target file.
-/// * `action` - An ActionMode reference specifying the action to be performed.
+/// * `source` - A `PathBuf` reference to the source file.
+/// * `target` - A `PathBuf` reference to the target file.
+/// * `action` - An `ActionMode` reference specifying the action to be performed.
 /// * `mkdir` - Mkdir subfolders on the way, in dry-run mode no subfolders are created.
 ///
 /// # Returns
@@ -125,7 +122,7 @@ pub fn file_action(
             }
 
             if matches!(action, ActionMode::DryRun(_)) {
-                error!("[Mkdir] {:?}", parent);
+                error!("[Mkdir] {}", parent.display());
             } else {
                 fs::create_dir_all(parent).map_err(|e| {
                     anyhow!("Failed to create target subfolder: {:?} - {:?}", parent, e)
@@ -140,18 +137,25 @@ pub fn file_action(
         ActionMode::Execute(ActualAction::Hardlink) => hardlink_file(source, target),
         ActionMode::Execute(ActualAction::RelativeSymlink) => relative_symlink_file(source, target),
         ActionMode::Execute(ActualAction::AbsoluteSymlink) => absolute_symlink_file(source, target),
-        ActionMode::DryRun(action) => dry_run(source, target, action),
+        ActionMode::DryRun(action) => {
+            dry_run(source, target, *action);
+            Ok(())
+        }
     };
 
     match result {
-        Ok(_) => Ok(()),
+        Ok(()) => Ok(()),
         Err(e) => Err(anyhow!("Failed to perform action: {:?}", e)),
     }
 }
 
-fn dry_run(source: &PathBuf, target: &PathBuf, action: &ActualAction) -> std::io::Result<()> {
-    error!("[{}] {:?} -> {:?}", action, source, target);
-    Ok(())
+fn dry_run<A: AsRef<Path>, B: AsRef<Path>>(source: A, target: B, action: ActualAction) {
+    error!(
+        "[{}] {} -> {}",
+        action,
+        source.as_ref().display(),
+        target.as_ref().display()
+    );
 }
 
 fn error_file_exists(target: &Path) -> std::io::Result<()> {
@@ -165,18 +169,18 @@ fn error_file_exists(target: &Path) -> std::io::Result<()> {
     }
 }
 
-fn copy_file(source: &PathBuf, target: &PathBuf) -> std::io::Result<()> {
-    debug!("Copying {:?} -> {:?}", source, target);
+fn copy_file<A: AsRef<Path>, B: AsRef<Path>>(source: A, target: B) -> std::io::Result<()> {
+    let source = source.as_ref();
+    let target = target.as_ref();
+
+    debug!("Copying {} -> {}", source.display(), target.display());
 
     let metadata = fs::metadata(source)?;
     let result = fs::copy(source, target)?;
 
     if metadata.len() != result {
         let _ = fs::remove_file(target);
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "File copy failed",
-        ));
+        return Err(std::io::Error::other("File copy failed"));
     }
 
     let mtime = FileTime::from_last_modification_time(&metadata);
@@ -187,14 +191,19 @@ fn copy_file(source: &PathBuf, target: &PathBuf) -> std::io::Result<()> {
     Ok(())
 }
 
-fn move_file(source: &PathBuf, target: &PathBuf) -> std::io::Result<()> {
-    debug!("Moving {:?} -> {:?}", source, target);
+fn move_file<A: AsRef<Path>, B: AsRef<Path>>(source: A, target: B) -> std::io::Result<()> {
+    let source = source.as_ref();
+    let target = target.as_ref();
+
+    debug!("Moving {} -> {}", source.display(), target.display());
 
     let result = fs::rename(source, target);
     if let Err(err) = result {
         warn!(
-            "Renaming file failed, falling back to cut/paste: {:?} for file {:?} -> {:?}",
-            err, source, target
+            "Renaming file failed, falling back to cut/paste: {:?} for file {} -> {}",
+            err,
+            source.display(),
+            target.display()
         );
         copy_file(source, target)?;
         fs::remove_file(source)
@@ -203,14 +212,23 @@ fn move_file(source: &PathBuf, target: &PathBuf) -> std::io::Result<()> {
     }
 }
 
-fn hardlink_file(source: &PathBuf, target: &PathBuf) -> std::io::Result<()> {
-    debug!("Creating hardlink {:?} -> {:?}", source, target);
+fn hardlink_file<A: AsRef<Path>, B: AsRef<Path>>(source: A, target: B) -> std::io::Result<()> {
+    let source = source.as_ref();
+    let target = target.as_ref();
+
+    debug!(
+        "Creating hardlink {} -> {}",
+        source.display(),
+        target.display()
+    );
 
     let result = fs::hard_link(source, target);
-    if let Err(_err) = result {
+    if let Err(err) = result {
         error!(
-            "Creating hardlink failed, falling back to copy: {:?} for file {:?} -> {:?}",
-            _err, source, target
+            "Creating hardlink failed, falling back to copy: {:?} for file {} -> {}",
+            err,
+            source.display(),
+            target.display()
         );
         copy_file(source, target)
     } else {
@@ -218,16 +236,36 @@ fn hardlink_file(source: &PathBuf, target: &PathBuf) -> std::io::Result<()> {
     }
 }
 
-fn relative_symlink_file(source: &PathBuf, target: &PathBuf) -> std::io::Result<()> {
-    debug!("Creating symlink {:?} -> {:?}", source, target);
+fn relative_symlink_file<A: AsRef<Path>, B: AsRef<Path>>(
+    source: A,
+    target: B,
+) -> std::io::Result<()> {
+    let source = source.as_ref();
+    let target = target.as_ref();
+
+    debug!(
+        "Creating symlink {} -> {}",
+        source.display(),
+        target.display()
+    );
 
     symlink::symlink_file(source, target)?;
 
     Ok(())
 }
 
-fn absolute_symlink_file(source: &PathBuf, target: &PathBuf) -> std::io::Result<()> {
-    debug!("Creating symlink {:?} -> {:?}", source, target);
+fn absolute_symlink_file<A: AsRef<Path>, B: AsRef<Path>>(
+    source: A,
+    target: B,
+) -> std::io::Result<()> {
+    let source = source.as_ref();
+    let target = target.as_ref();
+
+    debug!(
+        "Creating symlink {} -> {}",
+        source.display(),
+        target.display()
+    );
     let source = fs::canonicalize(source)?;
 
     relative_symlink_file(&source, target)

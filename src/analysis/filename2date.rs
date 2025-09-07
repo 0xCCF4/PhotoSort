@@ -1,14 +1,14 @@
 use anyhow::anyhow;
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
-use lazy_static::lazy_static;
 use regex::{Captures, Regex};
+use std::sync::LazyLock;
 
-lazy_static! {
-    static ref RE_NAIVE_FILENAME: Regex = regex::Regex::new(
+static RE_NAIVE_FILENAME: LazyLock<Regex> = LazyLock::new(|| {
+    regex::Regex::new(
         r"(\d{4})[-_]?(\d{2})[-_]?(\d{2})(\D+(\d{2})[-_:]?(\d{2})[-_:]?(\d{2}))?[-_]?",
     )
-    .expect("Failed to compile regex");
-}
+    .expect("Failed to compile regex")
+});
 
 #[derive(Debug, Default)]
 /// A `FileNameToDateTransformer` implementation that extracts the date from a file name in the format
@@ -82,16 +82,19 @@ pub trait FileNameToDateTransformer {
     /// If transformation fails, an error is returned. The program will log the error and try the next transformer.
     fn transform(&self, capture: &regex::Captures) -> anyhow::Result<Option<NaiveDateTime>>;
 
+    /// Tries to transform a file name into a date and time.
+    ///
+    /// # Errors
+    /// If transformation fails, an error is returned. The program will log the error and try the next transformer.
     fn try_transform_name(&self, name: &str) -> anyhow::Result<Option<(NaiveDateTime, String)>> {
         let all_matches = self.get_regex().captures_iter(name);
         for current_match in all_matches {
             let matched = current_match.get(0).map_or("", |m| m.as_str());
             match self.transform(&current_match) {
                 Ok(Some(dt)) => return Ok(Some((dt, name.replace(matched, "")))),
-                Ok(None) => continue,
+                Ok(None) => {}
                 Err(e) => {
-                    log::error!("Error: {:?}", e);
-                    continue;
+                    log::error!("Error: {e:?}");
                 }
             }
         }

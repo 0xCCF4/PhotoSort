@@ -4,13 +4,13 @@ use crate::analysis::name_formatters::{BracketInfo, FileType, NameFormatterInvoc
 use action::ActionMode;
 use anyhow::{anyhow, Result};
 use chrono::NaiveDateTime;
-use lazy_static::lazy_static;
 use log::{debug, error, info, trace, warn};
 use std::ffi::OsStr;
 use std::fs;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::sync::LazyLock;
 
 pub mod action;
 pub mod analysis;
@@ -47,14 +47,10 @@ impl FromStr for AnalysisType {
 
     fn from_str(s: &str) -> Result<Self> {
         match s.to_lowercase().as_str() {
-            "only_exif" => Ok(AnalysisType::OnlyExif),
-            "exif" => Ok(AnalysisType::OnlyExif),
-            "only_name" => Ok(AnalysisType::OnlyName),
-            "name" => Ok(AnalysisType::OnlyName),
-            "exif_then_name" => Ok(AnalysisType::ExifThenName),
-            "exif_name" => Ok(AnalysisType::ExifThenName),
-            "name_then_exif" => Ok(AnalysisType::NameThenExif),
-            "name_exif" => Ok(AnalysisType::NameThenExif),
+            "only_exif" | "exif" => Ok(AnalysisType::OnlyExif),
+            "only_name" | "name" => Ok(AnalysisType::OnlyName),
+            "exif_then_name" | "exif_name" => Ok(AnalysisType::ExifThenName),
+            "name_then_exif" | "name_exif" => Ok(AnalysisType::NameThenExif),
             _ => Err(anyhow::anyhow!("Invalid analysis type")),
         }
     }
@@ -92,15 +88,19 @@ pub struct AnalyzerSettings {
     pub mkdir: bool,
 }
 
-lazy_static! {
-    static ref RE_DETECT_NAME_FORMAT_COMMAND: regex::Regex = regex::Regex::new(
-        r"\{([^\}]*)\}" // finds { ... } blocks
-    ).expect("Failed to compile regex");
+static RE_DETECT_NAME_FORMAT_COMMAND: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(
+        r"\{([^\}]*)\}", // finds { ... } blocks
+    )
+    .expect("Failed to compile regex")
+});
 
-    static ref RE_COMMAND_SPLIT: regex::Regex = regex::Regex::new(
-        r"^(([^:]*):)?(.*)$" // splits command into modifiers:command
-    ).expect("Failed to compile regex");
-}
+static RE_COMMAND_SPLIT: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(
+        r"^(([^:]*):)?(.*)$", // splits command into modifiers:command
+    )
+    .expect("Failed to compile regex")
+});
 
 /// `Analyzer` is a struct that represents an analyzer for files.
 ///
@@ -197,7 +197,7 @@ impl Analyzer {
         }
     }
 
-    fn analyze_photo_exif(&self, file: &File) -> Result<Option<NaiveDateTime>> {
+    fn analyze_photo_exif(file: &File) -> Result<Option<NaiveDateTime>> {
         let exif_time = analysis::exif2date::get_exif_time(file)?;
         Ok(exif_time)
     }
@@ -208,7 +208,9 @@ impl Analyzer {
         Ok(video_time)
     }
 
-    fn analyze_exif(&self, path: &PathBuf) -> Result<Option<NaiveDateTime>> {
+    fn analyze_exif<A: AsRef<Path>>(&self, path: A) -> Result<Option<NaiveDateTime>> {
+        let path = path.as_ref();
+
         #[cfg(feature = "video")]
         let video = self.is_valid_video_extension(path.extension())?;
         let photo = self.is_valid_photo_extension(path.extension())?;
@@ -222,7 +224,7 @@ impl Analyzer {
 
         if photo {
             let file = File::open(path)?;
-            return self.analyze_photo_exif(&file);
+            return Analyzer::analyze_photo_exif(&file);
         }
         #[cfg(feature = "video")]
         if video {
@@ -247,7 +249,9 @@ impl Analyzer {
     /// * The file name cannot be retrieved or is invalid.
     /// * The file cannot be opened.
     /// * An error occurs during the analysis of the file's Exif data or name.
-    pub fn analyze(&self, path: &PathBuf) -> Result<(Option<NaiveDateTime>, String)> {
+    pub fn analyze<A: AsRef<Path>>(&self, path: A) -> Result<(Option<NaiveDateTime>, String)> {
+        let path = path.as_ref();
+
         let name = path
             .file_name()
             .ok_or(anyhow::anyhow!("No file name"))?
@@ -257,11 +261,11 @@ impl Analyzer {
         let valid_extension = self
             .is_valid_extension(path.extension())
             .unwrap_or_else(|err| {
-                warn!("Error checking file extension: {}", err);
+                warn!("Error checking file extension: {err}");
                 false
             });
         if !valid_extension {
-            warn!("Skipping file with invalid extension: {:?}", path);
+            warn!("Skipping file with invalid extension: {}", path.display());
             return Err(anyhow::anyhow!("Invalid file extension"));
         }
 
@@ -282,7 +286,7 @@ impl Analyzer {
                 let exif_result = self.analyze_exif(path);
                 let exif_result = match exif_result {
                     Err(e) => {
-                        warn!("Error analyzing Exif data: {} for {:?}", e, path);
+                        warn!("Error analyzing Exif data: {} for {}", e, path.display());
                         info!("Falling back to name analysis");
                         None
                     }
@@ -315,8 +319,6 @@ impl Analyzer {
         format_string: &'b str,
         info: &'a NameFormatterInvocationInfo,
     ) -> Result<String> {
-        let detect_commands = RE_DETECT_NAME_FORMAT_COMMAND.captures_iter(format_string);
-
         #[derive(Debug)]
         enum FormatString<'a> {
             Literal(String),
@@ -325,11 +327,12 @@ impl Analyzer {
         impl FormatString<'_> {
             fn formatted_string(self) -> String {
                 match self {
-                    FormatString::Literal(str) => str,
-                    FormatString::Command(_, str) => str,
+                    FormatString::Literal(str) | FormatString::Command(_, str) => str,
                 }
             }
         }
+
+        let detect_commands = RE_DETECT_NAME_FORMAT_COMMAND.captures_iter(format_string);
 
         let mut final_string: Vec<FormatString<'b>> = Vec::new();
 
@@ -358,15 +361,9 @@ impl Analyzer {
                 .expect("Should always match");
 
             // prefix
-            let command_modifier = inner_command_capture
-                .get(2)
-                .map(|x| x.as_str())
-                .unwrap_or("");
+            let command_modifier = inner_command_capture.get(2).map_or("", |x| x.as_str());
             // cmd
-            let actual_command = inner_command_capture
-                .get(3)
-                .map(|x| x.as_str())
-                .unwrap_or("");
+            let actual_command = inner_command_capture.get(3).map_or("", |x| x.as_str());
 
             let mut found_command = false;
 
@@ -381,8 +378,7 @@ impl Analyzer {
 
                     if !command_substitution.is_empty() && !command_modifier.is_empty() {
                         // prefix_substitution
-                        command_substitution =
-                            format!("{}{}", command_modifier, command_substitution);
+                        command_substitution = format!("{command_modifier}{command_substitution}");
                     }
                     found_command = true;
                     final_string.push(FormatString::Command(
@@ -405,19 +401,18 @@ impl Analyzer {
             ));
         }
 
-        trace!("Parsed format string {:?} to", format_string);
+        trace!("Parsed format string {format_string:?} to");
         for part in &final_string {
             match part {
-                FormatString::Literal(str) => trace!(" - Literal: {:?}", str),
-                FormatString::Command(cmd, str) => trace!(" - Command: {:?}\t{:?}", cmd, str),
+                FormatString::Literal(str) => trace!(" - Literal: {str:?}"),
+                FormatString::Command(cmd, str) => trace!(" - Command: {cmd:?}\t{str:?}"),
             }
         }
 
         Ok(final_string
             .into_iter()
-            .map(|v| v.formatted_string())
-            .collect::<Vec<_>>()
-            .join(""))
+            .map(FormatString::formatted_string)
+            .collect::<String>())
     }
 
     /// Performs the file action specified in the `Analyzer`'s settings on a file.
@@ -437,50 +432,32 @@ impl Analyzer {
     /// * The analysis of the file fails.
     /// * An IO error occurs while analyzing the date
     /// * An IO error occurs while doing the file action
+    #[allow(clippy::too_many_lines)]
     pub fn run_file(&self, path: &PathBuf, bracket_info: Option<BracketInfo>) -> Result<()> {
         let valid_ext = self.is_valid_extension(path.extension());
         let is_unknown_file = match valid_ext {
-            Ok(false) => match self.settings.unknown_file_format {
-                None => {
+            Ok(false) => {
+                if self.settings.unknown_file_format.is_none() {
                     info!(
-                        "Skipping file because extension is not in the list: {:?}",
-                        path
+                        "Skipping file because extension is not in the list: {}",
+                        path.display()
                     );
                     return Ok(());
                 }
-                Some(_) => {
-                    debug!("Processing unknown file: {:?}", path);
-                    true
-                }
-            },
+                debug!("Processing unknown file: {}", path.display());
+                true
+            }
             Ok(true) => {
-                debug!("Processing file: {:?}", path);
+                debug!("Processing file: {}", path.display());
                 false
             }
             Err(err) => {
-                warn!("Error checking file extension: {}", err);
+                warn!("Error checking file extension: {err}");
                 return Ok(());
             }
         };
 
-        let (date, cleaned_name) = if !is_unknown_file {
-            let (date, cleaned_name) = self.analyze(path).map_err(|err| {
-                error!("Error extracting date: {}", err);
-                err
-            })?;
-            let cleaned_name = name::clean_image_name(cleaned_name.as_str());
-
-            debug!(
-                "Analysis results: Date: {:?}, Cleaned name: {:?}",
-                date, cleaned_name
-            );
-
-            if date.is_none() {
-                warn!("No date was derived for file {:?}.", path);
-            }
-
-            (date, cleaned_name)
-        } else {
+        let (date, cleaned_name) = if is_unknown_file {
             (
                 None,
                 path.with_extension("")
@@ -490,6 +467,20 @@ impl Analyzer {
                     .ok_or(anyhow::anyhow!("Invalid file name"))?
                     .to_string(),
             )
+        } else {
+            let (date, cleaned_name) = self.analyze(path).map_err(|err| {
+                error!("Error extracting date: {err}");
+                err
+            })?;
+            let cleaned_name = name::clean_image_name(cleaned_name.as_str());
+
+            debug!("Analysis results: Date: {date:?}, Cleaned name: {cleaned_name:?}",);
+
+            if date.is_none() {
+                warn!("No date was derived for file {}.", path.display());
+            }
+
+            (date, cleaned_name)
         };
 
         let date_string = match date {
@@ -515,8 +506,7 @@ impl Analyzer {
             duplicate_counter: None,
             extension: path
                 .extension()
-                .map(|ext| ext.to_string_lossy().to_string())
-                .unwrap_or("".to_owned()),
+                .map_or(String::new(), |ext| ext.to_string_lossy().to_string()),
             bracket_info: bracket_info.as_ref(),
         };
 
@@ -548,7 +538,7 @@ impl Analyzer {
 
             let mut target_path = self.settings.target_dir.clone();
             for path_component in path_split {
-                let component = path_component.replace("/", "").replace("\\", "");
+                let component = path_component.replace(['/', '\\'], "");
                 if component != ".." {
                     target_path.push(component);
                 }
@@ -560,14 +550,14 @@ impl Analyzer {
         let mut dup_counter = 0;
 
         while new_path.exists() {
-            debug!("Target file already exists: {:?}", new_path);
+            debug!("Target file already exists: {}", new_path.display());
             dup_counter += 1;
             file_name_info.duplicate_counter = Some(dup_counter);
             new_path = new_file_path(&file_name_info)?;
         }
 
         if dup_counter > 0 {
-            info!("De-duplicated target file: {:?}", new_path);
+            info!("De-duplicated target file: {}", new_path.display());
         }
 
         action::file_action(
@@ -665,11 +655,11 @@ pub fn find_files_in_source(
         let path = entry.path();
         if path.is_dir() {
             if recursive {
-                debug!("Processing subfolder: {:?}", path);
+                debug!("Processing subfolder: {}", path.display());
                 find_files_in_source(path, recursive, result)?;
             }
         } else {
-            trace!("Found file: {:?}", &path);
+            trace!("Found file: {}", path.display());
             result.push(path);
         }
     }

@@ -18,18 +18,17 @@ documentation = "https://docs.rs/photo_sort"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0.96"
-chrono = "0.4.39"
+anyhow = "1.0.99"
+chrono = "0.4.41"
 kamadak-exif = "0.6.1"
-clap = { version = "4.5.30", features = ["derive"] }
-regex = "1.11.1"
-lazy_static = "1.5.0"
-log = "0.4.26"
-filetime = "0.2.25"
+clap = { version = "4.5.46", features = ["derive"] }
+regex = "1.11.2"
+log = "0.4.27"
+filetime = "0.2.26"
 symlink = "0.1.0"
-ffmpeg-next = { version = "7.1.0", optional = true }
+ffmpeg-next = { version = "8.0.0", optional = true }
 fern = { version = "0.7.1", features = ["colored"], optional = true }
-indicatif = { version = "0.17.11", optional = true }
+indicatif = { version = "0.18.0", optional = true }
 indicatif-log-bridge = { version = "0.2.3", optional = true }
 threadpool = { version = "1.8.1", optional = true }
 

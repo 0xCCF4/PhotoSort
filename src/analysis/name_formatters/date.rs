@@ -1,12 +1,10 @@
 use crate::analysis::name_formatters::{NameFormatter, NameFormatterInvocationInfo};
 use anyhow::Result;
-use lazy_static::lazy_static;
 use regex::Regex;
+use std::sync::LazyLock;
 
-lazy_static! {
-    static ref DATE_FORMAT: regex::Regex =
-        regex::Regex::new(r"^(date|d)(\?(.+))?$").expect("Failed to compile regex");
-}
+static DATE_FORMAT: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"^(date|d)(\?(.+))?$").expect("Failed to compile regex"));
 
 /// Formats a date format command {date} to a date string.
 #[derive(Debug, Default)]
