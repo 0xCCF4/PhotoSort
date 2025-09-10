@@ -40,7 +40,7 @@ impl NameFormatter for BracketedFormat {
             Some(formatted) => Ok(formatted),
             None => {
                 warn!("Tried to format a non bracketed file using the {{bracket}} format string.");
-                Ok("".to_string())
+                Ok(String::new())
             }
         }
     }

@@ -109,7 +109,7 @@ where
 fn parse_sbyte(data: &[u8], offset: usize, count: usize) -> Value {
     let bytes = data[offset..offset + count]
         .iter()
-        .map(|x| *x as i8)
+        .map(|x| x.cast_signed())
         .collect();
     Value::SByte(bytes)
 }
@@ -124,7 +124,7 @@ where
 {
     let mut val = Vec::with_capacity(count);
     for i in 0..count {
-        val.push(E::loadu16(data, offset + i * 2) as i16);
+        val.push(E::loadu16(data, offset + i * 2).cast_signed());
     }
     Value::SShort(val)
 }
@@ -135,7 +135,7 @@ where
 {
     let mut val = Vec::with_capacity(count);
     for i in 0..count {
-        val.push(E::loadu32(data, offset + i * 4) as i32);
+        val.push(E::loadu32(data, offset + i * 4).cast_signed());
     }
     Value::SLong(val)
 }
@@ -147,8 +147,8 @@ where
     let mut val = Vec::with_capacity(count);
     for i in 0..count {
         val.push(SRational {
-            num: E::loadu32(data, offset + i * 8) as i32,
-            denom: E::loadu32(data, offset + i * 8 + 4) as i32,
+            num: E::loadu32(data, offset + i * 8).cast_signed(),
+            denom: E::loadu32(data, offset + i * 8 + 4).cast_signed(),
         });
     }
     Value::SRational(val)
@@ -251,7 +251,7 @@ where
             Tag::InteropIFDPointer => Context::Interop,
             _ => {
                 entries.push(Field {
-                    tag: tag,
+                    tag,
                     ifd_num: In(ifd_num),
                     value: val,
                 });

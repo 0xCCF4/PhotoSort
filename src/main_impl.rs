@@ -62,22 +62,22 @@ struct Arguments {
     /// to the target directory (specified by `--target-dir`).
     #[arg(long = "unknown")]
     unknown_file_format: Option<String>,
-    /// The target file format for files that can be identified as bracketed photo set with different exposure levels. By using `--bracketed` all
+    /// The target file format for files that can be identified as bracketed photo set with different exposure levels. By using `--bracket` all
     /// files identified as bracketed are moved to this folder instead of the one specified by `--target-dir`. The photo's date will be extracted from the
     /// first bracketed photo in the sequence.
     /// The sequence number can be accessed with the format specifier `{bracket}`.
-    /// Bracketed photos sequences are detected via EXIF information. The file of a sequence are expected to be adjacent to each other
-    /// (when listing the source directory in name-ascending-order). Note that using the `--bracketed` option requires each file to
-    /// be analyzed using the EXIF analyzer even if Analysis type is set to Name-only.
-    /// Currently only works for Sony's cameras. Feel free to open an issue requesting support for other vendors.
-    #[arg(long = "bracket")]
+    /// Bracketed photos sequences are detected via manufacturer-specific EXIF information.
+    /// Note that using the `--bracket` option requires each file to
+    /// be analyzed using the EXIF analyzer, even if the Analysis type is set to Name-only.
+    /// Currently only works for Sony's cameras. Feel free to open an issue requesting support for other vendors at https://github.com/0xCCF4/PhotoSort/issues.
+    #[arg(long = "bracket", alias = "bracketed")]
     bracketed_file_format: Option<String>,
     /// If the file format contains a "/", indicating that the file should be placed in a subdirectory,
     /// the mkdir flag controls if the tool is allowed to create non-existing subdirectories. No folder is created in dry-run mode.
     #[arg(long, default_value = "false", alias = "mkdirs")]
     mkdir: bool,
     /// A comma separated list of file extensions to include in the analysis.
-    #[arg(short, long, default_value = "jpg,jpeg,png,tiff,heif,heic,avif,webp", value_delimiter = ',', num_args = 0..)]
+    #[arg(short, long, alias= "ext", default_value = "jpg,jpeg,png,tiff,heif,heic,avif,webp", value_delimiter = ',', num_args = 0..)]
     extensions: Vec<String>,
     #[cfg(feature = "video")]
     /// A comma separated list of video extensions to include in the analysis.
@@ -99,7 +99,7 @@ struct Arguments {
     #[arg(short, long, default_value = "false")]
     verbose: bool,
     /// Debug, if set, the tool will print debug information (including debug implies setting verbose).
-    #[arg(short, long, default_value = "false")]
+    #[arg(short, long, default_value = "false", alias = "vv")]
     debug: bool,
     /// Logfile, if set, the tool will log its output to the specified file. Appending to the specified file if it already exists.
     #[arg(short, long = "log")]
