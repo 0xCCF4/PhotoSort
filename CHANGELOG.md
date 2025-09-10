@@ -1,10 +1,78 @@
 # Changelog
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.2.5](https://github.com/0xCCF4/PhotoSort/compare/v0.2.4...v0.2.5) - 2025-09-10
+
+### Other
+
+- fix ci checkout action configuration
+- vendored indicatif-log-bridge dependency because of dependency mismatch
+- changed installation instructions
+- Merge pull request #119 from 0xCCF4/dependabot/cargo/log-0.4.28
+- *(deps)* bump log from 0.4.27 to 0.4.28
+- Merge pull request #116 from 0xCCF4/dependabot/cargo/clap-4.5.46
+- *(deps)* bump clap from 4.5.45 to 4.5.46
+- *(deps)* bump actions-rust-lang/setup-rust-toolchain
+- Merge pull request #109 from 0xCCF4/dependabot/cargo/anyhow-1.0.99
+- *(deps)* bump anyhow from 1.0.98 to 1.0.99
+- *(deps)* bump actions/checkout from 4 to 5
+- *(deps)* bump clap from 4.5.40 to 4.5.41
+- *(deps)* bump indicatif from 0.17.11 to 0.18.0
+- *(deps)* bump actions-rust-lang/setup-rust-toolchain
+- fixed cargo clippy suggestions 3
+- fixed cargo clippy suggestions 2
+- fixed cargo clippy suggestions
+- *(ci)* change target devskim runner version
+- *(deps)* bump clap from 4.5.39 to 4.5.40
+- *(deps)* bump clap from 4.5.38 to 4.5.39
+- *(deps)* bump clap from 4.5.37 to 4.5.38
+- *(deps)* bump dependabot/fetch-metadata from 2.3.0 to 2.4.0
+- *(deps)* bump chrono from 0.4.40 to 0.4.41
+- *(deps)* bump actions-rust-lang/setup-rust-toolchain
+- *(deps)* bump clap from 4.5.36 to 4.5.37
+- Merge pull request #94 from 0xCCF4/dependabot/cargo/clap-4.5.36
+- *(deps)* bump clap from 4.5.35 to 4.5.36
+- *(deps)* bump clap from 4.5.34 to 4.5.35
+- *(deps)* bump clap from 4.5.32 to 4.5.34
+- *(deps)* bump log from 0.4.26 to 0.4.27
+- *(deps)* bump clap from 4.5.31 to 4.5.32
+- *(deps)* bump chrono from 0.4.39 to 0.4.40
+- Merge pull request #87 from 0xCCF4/dependabot/cargo/anyhow-1.0.97
+- *(deps)* bump anyhow from 1.0.96 to 1.0.97
+- *(deps)* bump actions-rust-lang/setup-rust-toolchain
+- *(deps)* bump anyhow from 1.0.95 to 1.0.96
+- Merge pull request #83 from 0xCCF4/dependabot/cargo/log-0.4.26
+- *(deps)* bump log from 0.4.25 to 0.4.26
+- *(deps)* bump clap from 4.5.28 to 4.5.29
+- *(deps)* bump clap from 4.5.27 to 4.5.28
+- *(deps)* bump indicatif from 0.17.9 to 0.17.11
+- *(deps)* bump dependabot/fetch-metadata from 2.2.0 to 2.3.0
+- *(deps)* bump clap from 4.5.26 to 4.5.27
+- *(deps)* bump log from 0.4.22 to 0.4.25
+- *(deps)* bump clap from 4.5.23 to 4.5.26
+- *(deps)* bump anyhow from 1.0.94 to 1.0.95
+- *(deps)* bump indicatif from 0.17.8 to 0.17.9
+- *(deps)* bump fern from 0.7.0 to 0.7.1
+- *(deps)* bump actions/attest-build-provenance from 1 to 2
+- *(deps)* bump chrono from 0.4.38 to 0.4.39
+- Merge pull request #70 from 0xCCF4/dependabot/cargo/clap-4.5.23
+- *(deps)* bump clap from 4.5.21 to 4.5.23
+- *(deps)* bump clap from 4.5.20 to 4.5.21
+- *(deps)* bump anyhow from 1.0.92 to 1.0.93
+- *(deps)* bump kamadak-exif from 0.6.0 to 0.6.1
+- *(deps)* bump kamadak-exif from 0.5.5 to 0.6.0
+- *(deps)* bump anyhow from 1.0.91 to 1.0.92
+# Changelog
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.2.4](https://github.com/0xCCF4/PhotoSort/compare/v0.2.3...v0.2.4) - 2024-10-29
 

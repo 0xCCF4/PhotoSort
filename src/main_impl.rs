@@ -1,8 +1,8 @@
+use crate::indicatif_log_bridge::LogWrapper;
 use chrono::Utc;
 use clap::{arg, Parser};
 use fern::colors::{Color, ColoredLevelConfig};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use indicatif_log_bridge::LogWrapper;
 use log::{debug, error, info, LevelFilter};
 use photo_sort::analysis::name_formatters::BracketInfo;
 use photo_sort::{action, find_files_in_source, AnalysisType, Analyzer};

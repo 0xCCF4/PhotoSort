@@ -178,9 +178,7 @@ cargo install photo_sort
 or
 
 ```bash
-git clone https://github.com/0xCCF4/photo_sort.git
-cd photo_sort
-cargo install --path .
+cargo install --git https://github.com/0xCCF4/PhotoSort
 ```
 
 The `photo_sort` binary will then be available.
@@ -196,9 +194,7 @@ cargo install --features video photo_sort
 or
 
 ```bash
-git clone https://github.com/0xCCF4/photo_sort.git
-cd photo_sort
-cargo install --features video --path .
+cargo install --git https://github.com/0xCCF4/PhotoSort --features video
 ```
 
 ## Contributing

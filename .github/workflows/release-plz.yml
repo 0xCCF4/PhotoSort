@@ -19,7 +19,6 @@ jobs:
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
-          token: ${{ secrets.RELEASE_PLZ_PAT }}
 
       - uses: actions-rs/toolchain@v1
         with:

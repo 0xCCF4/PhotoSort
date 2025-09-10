@@ -31,7 +31,7 @@ jobs:
     name: 'Build and test ${{ matrix.feature_flag }}: ${{ matrix.os }}, ${{ matrix.rustalias }}'
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@master
+    - uses: actions/checkout@v5
 
     - name: Install Rust
       uses: actions-rs/toolchain@v1
