@@ -67,9 +67,9 @@ struct Arguments {
     /// The target file format for files that can be identified as bracketed photo set with different exposure levels. By using `--bracket` all
     /// files identified as bracketed are moved/renamed/copied with the specified format string instead of the default one specified by `--target-dir`.
     /// The `--bracket` argument provides the following additional format specifiers:
-    /// `{bracket?num}` an increasing number, unique for each group of bracketed images,
-    /// `{bracket?seq}` the index of the current photo in the sequence,
-    /// `{bracket?len}` the length of the bracketing sequence,
+    /// `{bracket?group}` an increasing number, unique for each group of bracketed images,
+    /// `{bracket?index}` the index of the current photo in the sequence,
+    /// `{bracket?length}` the length of the bracketing sequence,
     /// `{bracket?first}`/`{bracket?last}` the name of the first/last image in the sequence.
     /// Bracketed photos sequences are detected via manufacturer-specific EXIF information.
     /// Note that using the `--bracket` option requires each file to
