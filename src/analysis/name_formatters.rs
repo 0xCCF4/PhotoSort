@@ -1,6 +1,7 @@
 use anyhow::Result;
 use chrono::NaiveDateTime;
 use regex::Regex;
+use std::path::PathBuf;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum FileType {
@@ -24,6 +25,10 @@ pub struct NameFormatterInvocationInfo<'a> {
 #[derive(Debug, Clone)]
 pub struct BracketInfo {
     pub sequence_number: u32,
+    pub first: PathBuf,
+    pub last: PathBuf,
+    pub sequence_length: usize,
+    pub group_index: usize,
 }
 
 pub trait NameFormatter {

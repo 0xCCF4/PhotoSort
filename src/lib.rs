@@ -1,15 +1,14 @@
 #![doc = include_str!("../README.md")]
 
 use crate::analysis::name_formatters::{BracketInfo, FileType, NameFormatterInvocationInfo};
-use crate::exifutils::LittleEndian;
 use action::ActionMode;
 use anyhow::{anyhow, Result};
 use chrono::NaiveDateTime;
-use exif::Context;
 use log::{debug, error, info, trace, warn};
+use std::cmp::Ordering;
 use std::ffi::OsStr;
 use std::fs;
-use std::fs::File;
+use std::fs::{DirEntry, File};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::LazyLock;
@@ -435,7 +434,7 @@ impl Analyzer {
     /// * An IO error occurs while analyzing the date
     /// * An IO error occurs while doing the file action
     #[allow(clippy::too_many_lines)]
-    pub fn run_file(&self, path: &PathBuf, bracket_info: Option<BracketInfo>) -> Result<()> {
+    pub fn run_file(&self, path: &PathBuf, bracket_info: &Option<BracketInfo>) -> Result<()> {
         let valid_ext = self.is_valid_extension(path.extension());
         let is_unknown_file = match valid_ext {
             Ok(false) => {
@@ -616,50 +615,6 @@ impl Analyzer {
         let valid_video = false;
         Ok(valid_photo || valid_video)
     }
-
-    pub fn get_bracketing_info<P: AsRef<Path>>(
-        &self,
-        photo_path: P,
-    ) -> Result<Option<BracketEXIFInformation>> {
-        let file = std::fs::File::open(photo_path)
-            .map_err(|e| anyhow!("Error while opening file: {e}"))?;
-        let mut bufreader = std::io::BufReader::new(file);
-        let exifreader = exif::Reader::new();
-        let exif = exifreader
-            .read_from_container(&mut bufreader)
-            .map_err(|e| anyhow!("Error while reading EXIF {e}"))?;
-
-        let x = match exif.get_field(exif::Tag::MakerNote, exif::In::PRIMARY) {
-            Some(field) => field,
-            None => return Ok(None),
-        };
-        let value = match &x.value {
-            exif::Value::Undefined(data, _) => data,
-            _ => return Ok(None),
-        };
-
-        if value.starts_with("SONY DSC \0\0\0".as_bytes())
-            || value.starts_with("SONY CAM \0\0\0".as_bytes())
-        {
-            let maker_note = exifutils::parse_ifd::<LittleEndian>(value, 12, Context::Exif, 0)?;
-
-            let sequence_number = match maker_note.get(&0xb04a) {
-                None => return Ok(None),
-                Some(field) => match field.value.as_uint()?.get(0) {
-                    Some(v) => v,
-                    None => return Ok(None),
-                },
-            };
-
-            if sequence_number > 0 {
-                return Ok(Some(BracketEXIFInformation {
-                    index: sequence_number,
-                }));
-            }
-        }
-
-        Ok(None)
-    }
 }
 
 mod exifutils;
@@ -683,7 +638,13 @@ pub fn find_files_in_source(
     recursive: bool,
     result: &mut Vec<PathBuf>,
 ) -> Result<()> {
-    let entries = fs::read_dir(directory)?;
+    let mut entries = fs::read_dir(directory)?.collect::<Vec<std::io::Result<DirEntry>>>();
+    entries.sort_by(|a, b| match (a, b) {
+        (Ok(a), Ok(b)) => a.path().cmp(&b.path()),
+        (Err(_), Ok(_)) => Ordering::Less,
+        (Ok(_), Err(_)) => Ordering::Greater,
+        (Err(_), Err(_)) => Ordering::Equal,
+    });
     for entry in entries {
         let entry = entry?;
         let path = entry.path();

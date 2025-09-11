@@ -62,9 +62,9 @@ fn parse_byte(data: &[u8], offset: usize, count: usize) -> Value {
 fn parse_ascii(data: &[u8], offset: usize, count: usize) -> Value {
     // Any ASCII field can contain multiple strings [TIFF6 Image File
     // Directory].
-    let iter = (&data[offset..offset + count]).split(|&b| b == b'\0');
-    let mut v: Vec<Vec<u8>> = iter.map(|x| x.to_vec()).collect();
-    if v.last().map_or(false, |x| x.len() == 0) {
+    let iter = data[offset..offset + count].split(|&b| b == b'\0');
+    let mut v: Vec<Vec<u8>> = iter.map(<[u8]>::to_vec).collect();
+    if v.last().is_some_and(Vec::is_empty) {
         v.pop();
     }
     Value::Ascii(v)
@@ -115,7 +115,10 @@ fn parse_sbyte(data: &[u8], offset: usize, count: usize) -> Value {
 }
 
 fn parse_undefined(data: &[u8], offset: usize, count: usize) -> Value {
-    Value::Undefined(data[offset..offset + count].to_vec(), offset as u32)
+    Value::Undefined(
+        data[offset..offset + count].to_vec(),
+        u32::try_from(offset).unwrap_or(u32::MAX),
+    )
 }
 
 fn parse_sshort<E>(data: &[u8], offset: usize, count: usize) -> Value
@@ -287,7 +290,7 @@ where
         if data.len() < ofs || data.len() - ofs < vallen {
             return Err(Error::InvalidFormat("Truncated field value"));
         }
-        Value::Unknown(typ, cnt, ofs as u32)
+        Value::Unknown(typ, cnt, u32::try_from(ofs).unwrap_or(u32::MAX))
     };
     Ok((tag, val))
 }

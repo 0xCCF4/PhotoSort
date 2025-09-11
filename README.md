@@ -103,13 +103,16 @@ Options:
                                        
       --bracket <BRACKETED_FILE_FORMAT>The target file format for files that can be identified as bracketed photo set with
                                        different exposure levels. By using `--bracket` all files identified as bracketed are
-                                       moved to this folder instead of the one specified by `--target-dir`. The photo's date
-                                       will be extracted from the first bracketed photo in the sequence. The sequence number
-                                       can be accessed with the format specifier `{bracket}`. Bracketed photos sequences are
-                                       detected via manufacturer-specific EXIF information. Note that using the `--bracket`
-                                       option requires each file to be analyzed using the EXIF analyzer, even if the Analysis
-                                       type is set to Name-only. Currently only works for Sony's cameras. Feel free to open
-                                       an issue requesting support for other vendors at https://github.com/0xCCF4/PhotoSort/issues.
+                                       moved/renamed/copied with the specified format string instead of the default one
+                                       specified by `--target-dir`. The `--bracket` argument provides the following additional
+                                       format specifiers: `{bracket?num}` an increasing number, unique for each group of
+                                       bracketed images, `{bracket?seq}` the index of the current photo in the sequence,
+                                       `{bracket?len}` the length of the bracketing sequence, `{bracket?first}`/`{bracket?last}`
+                                       the name of the first/last image in the sequence. Bracketed photos sequences are detected
+                                       via manufacturer-specific EXIF information. Note that using the `--bracket` option
+                                       requires each file to be analyzed using the EXIF analyzer, even if the Analysis type
+                                       is set to Name-only. Currently only works for Sony's cameras. Feel free to open an
+                                       issue requesting support for other vendors at https://github.com/0xCCF4/PhotoSort/issues
 
                                        
       --nodate <NODATE_FILE_FORMAT>    The target format for files that have no date. The `analysis_mode` allows specifying
