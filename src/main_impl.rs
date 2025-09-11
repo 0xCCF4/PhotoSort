@@ -328,7 +328,7 @@ pub fn main() {
     });
 
     let mut bracketed_queue = VecDeque::<(PathBuf, BracketEXIFInformation)>::new();
-    let mut bracket_group_index = 0;
+    let mut bracket_group_index = 1;
 
     let file_count = files.len();
     for (i, file) in files.into_iter().enumerate() {
