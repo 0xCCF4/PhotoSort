@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.6](https://github.com/0xCCF4/PhotoSort/compare/v0.2.5...v0.2.6) - 2025-09-12
+
+### Added
+
+- bracket image group formattings
+
+### Other
+
+- run cargo fmt
+- changed bracketing documentation to reflect easier format string specifiers
+- let bracket group index start with 1
+- Merge branch 'main' into 84-feature-request-identify-bracketed-images-and-move-them-per-set-in-a-dedicated-folder
+- fix actions checkout version
+
 ## [0.2.5](https://github.com/0xCCF4/PhotoSort/compare/v0.2.4...v0.2.5) - 2025-09-10
 
 ### Other
