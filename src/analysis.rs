@@ -1,4 +1,3 @@
-
 pub mod bracketed;
 pub mod exif2date;
 pub mod filename2date;
