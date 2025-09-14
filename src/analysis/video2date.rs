@@ -33,7 +33,7 @@ fn init_ffmpeg() -> anyhow::Result<()> {
 /// # Errors
 /// This function will return an error if:
 /// * The video file could not be read.
-pub fn get_video_time<P: AsRef<Path> + ?Sized>(path: &P) -> anyhow::Result<Option<NaiveDateTime>> {
+pub fn get_video_time<P: AsRef<Path>>(path: P) -> anyhow::Result<Option<NaiveDateTime>> {
     init_ffmpeg()?;
 
     let instance = ffmpeg::format::input(&path)?;

@@ -3,7 +3,7 @@ use filetime::FileTime;
 use log::{debug, error, warn};
 use std::fmt::{Display, Formatter};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::str::FromStr;
 
 /// `ActualAction` is an enumeration that defines the different types of actions that can be performed on a file.
@@ -102,12 +102,15 @@ impl FromStr for ActualAction {
 ///
 /// * The target file already exists.
 /// * An error occurred during the file operation.
-pub fn file_action(
-    source: &PathBuf,
-    target: &PathBuf,
+pub fn file_action<P: AsRef<Path>, Q: AsRef<Path>>(
+    source: P,
+    target: Q,
     action: &ActionMode,
     mkdir: bool,
 ) -> Result<()> {
+    let source = source.as_ref();
+    let target = target.as_ref();
+
     error_file_exists(target)
         .map_err(|e| anyhow!("Target file already exists: {:?} - {:?}", target, e))?;
 
