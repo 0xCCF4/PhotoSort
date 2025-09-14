@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.7](https://github.com/0xCCF4/PhotoSort/compare/v0.2.6...v0.2.7) - 2025-09-14
+
+### Fixed
+
+- fixed compiling with --video due to API changes
+
+### Other
+
+- changed error string for --bracket arg
+- add install crate from crates
+
 ## [0.2.6](https://github.com/0xCCF4/PhotoSort/compare/v0.2.5...v0.2.6) - 2025-09-12
 
 ### Added
