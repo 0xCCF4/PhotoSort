@@ -204,7 +204,7 @@ impl Analyzer {
     }
 
     #[cfg(feature = "video")]
-    fn analyze_video_metadata(&self, path: &PathBuf) -> Result<Option<NaiveDateTime>> {
+    fn analyze_video_metadata<P: AsRef<Path>>(path: P) -> Result<Option<NaiveDateTime>> {
         let video_time = analysis::video2date::get_video_time(path)?;
         Ok(video_time)
     }
@@ -229,7 +229,7 @@ impl Analyzer {
         }
         #[cfg(feature = "video")]
         if video {
-            return self.analyze_video_metadata(path);
+            return Analyzer::analyze_video_metadata(path);
         }
 
         Err(anyhow::anyhow!("File extension is not valid"))
@@ -434,7 +434,12 @@ impl Analyzer {
     /// * An IO error occurs while analyzing the date
     /// * An IO error occurs while doing the file action
     #[allow(clippy::too_many_lines)]
-    pub fn run_file(&self, path: &PathBuf, bracket_info: &Option<BracketInfo>) -> Result<()> {
+    pub fn run_file<P: AsRef<Path>>(
+        &self,
+        path: P,
+        bracket_info: &Option<BracketInfo>,
+    ) -> Result<()> {
+        let path = path.as_ref();
         let valid_ext = self.is_valid_extension(path.extension());
         let is_unknown_file = match valid_ext {
             Ok(false) => {
@@ -495,7 +500,7 @@ impl Analyzer {
         }
         #[cfg(feature = "video")]
         if self.is_valid_video_extension(path.extension())? {
-            ftype = FileType::Video
+            ftype = FileType::Video;
         }
 
         let mut file_name_info = NameFormatterInvocationInfo {

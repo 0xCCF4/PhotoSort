@@ -19,37 +19,40 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     strategy:
       matrix:
-        os: [ubuntu-latest]
-        rustalias: [stable, nightly]
-        feature_flag: ["--no-default-features", ""]
+        os: [ ubuntu-latest ]
+        rustalias: [ stable, nightly ]
+        feature_flag: [ "--no-default-features", "", "--features video" ]
         include:
-        - rustalias: stable
-          rust: stable
-        - rustalias: nightly
-          rust: nightly
+          - rustalias: stable
+            rust: stable
+          - rustalias: nightly
+            rust: nightly
 
     name: 'Build and test ${{ matrix.feature_flag }}: ${{ matrix.os }}, ${{ matrix.rustalias }}'
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v5
+      - uses: actions/checkout@v5
 
-    - name: Install Rust
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: ${{ matrix.rust }}
-        override: true
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          override: true
 
-    - name: Check
-      uses: actions-rs/cargo@v1
-      with:
-        command: check
-        args: --all ${{ matrix.feature_flag }} --bins --examples
+      - name: Install ffmepg dependencies
+        run: apt install -y clang libavcodec-dev libavformat-dev libavutil-dev pkg-config ffmpeg libavutil-dev libavfilter-dev libavdevice-dev
 
-    - name: Tests
-      uses: actions-rs/cargo@v1
-      with:
-        command: test
-        args: --all ${{ matrix.feature_flag }}
+      - name: Check
+        uses: actions-rs/cargo@v1
+        with:
+          command: check
+          args: --all ${{ matrix.feature_flag }} --bins --examples
+
+      - name: Tests
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --all ${{ matrix.feature_flag }}
 
   cargo_fmt:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
@@ -71,24 +74,26 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     strategy:
       matrix:
-        feature_flag: ["--no-default-features", ""]
+        feature_flag: [ "--no-default-features", "", "--features video" ]
     runs-on: ubuntu-latest
     name: 'Style and docs ${{ matrix.feature_flag }}'
     steps:
-    - uses: actions/checkout@v5
-    - uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-        toolchain: nightly
-        override: true
-        components: clippy
-    - name: clippy
-      uses: actions-rs/cargo@v1
-      with:
-        command: clippy
-        args: --all-targets ${{ matrix.feature_flag }} -- -D warnings
-    - name: docs
-      uses: actions-rs/cargo@v1
-      with:
-        command: doc
-        args: --no-deps ${{ matrix.feature_flag }}
+      - uses: actions/checkout@v5
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+          components: clippy
+      - name: Install ffmepg dependencies
+        run: apt install -y clang libavcodec-dev libavformat-dev libavutil-dev pkg-config ffmpeg libavutil-dev libavfilter-dev libavdevice-dev
+      - name: clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --all-targets ${{ matrix.feature_flag }} -- -D warnings
+      - name: docs
+        uses: actions-rs/cargo@v1
+        with:
+          command: doc
+          args: --no-deps ${{ matrix.feature_flag }}
