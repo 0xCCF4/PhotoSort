@@ -30,10 +30,10 @@ impl NameFormatter for BracketedFormat {
             Some("?len"|"?length") => invocation_info.bracket_info.as_ref().map(|b|b.sequence_length.to_string()),
             Some("?group"|"?grp"|"?num") => invocation_info.bracket_info.as_ref().map(|b|b.group_index.to_string()),
             Some(x) => {
-                return Err(anyhow!("Unknown format argument {x:?} for the {{bracket}} format specifier. Possible values are \"seq/name/name_first/name_last/len/length/group/num\""))
+                return Err(anyhow!("Unknown format argument {x:?} for the {{bracket}} format specifier. Possible values are \"index/first/last/length/group\""))
             }
             None => {
-                return Err(anyhow!("No format argument for the {{bracket}} format string was specified. Possible values are \"seq/name/name_first/name_last/len/length/group/num\""));
+                return Err(anyhow!("No format argument for the {{bracket}} format string was specified. Possible values are \"index/first/last/length/group\""));
             }
         };
 
