@@ -137,6 +137,15 @@ Options:
                                        only_exif. Name analysis tries to extract the date from the file name, Exif
                                        analysis tries to extract the date from the EXIF data [default: exif_then_name]
                                        
+       --date-field <EXIF_DATE_TYPE>   The EXIF date field to use, possible values are `modify`, `creation`, `digitized`.
+                                       EXIF data contains several date fields. `Modify` is the modification date, which
+                                       is updated when the file is edited. `Create` is the creation date, which is usually
+                                       the date when the photo was taken. `Digitize` is the digitized date, which is the
+                                       date when the photo was digitized (for example, when converting a film photo to
+                                       a digital image). For digital cameras, this is usually the same as the creation
+                                       date. The default is `create`
+                                       [default: create]
+                                       
   -m, --move-mode <MOVE_MODE>          The action mode, possible values are move, copy, hardlink, relative_symlink,
                                        absolute_symlink. Move will move the files, Copy will copy the files, Hardlink
                                        (alias: hard) will create hardlinks, RelativeSymlink (alias: relsym) will create

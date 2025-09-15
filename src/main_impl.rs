@@ -5,6 +5,7 @@ use fern::colors::{Color, ColoredLevelConfig};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use log::{debug, error, info, trace, LevelFilter};
 use photo_sort::analysis::bracketed::get_bracketing_info;
+use photo_sort::analysis::exif2date::ExifDateType;
 use photo_sort::analysis::name_formatters::BracketInfo;
 use photo_sort::{action, find_files_in_source, AnalysisType, Analyzer, BracketEXIFInformation};
 use std::collections::VecDeque;
@@ -92,6 +93,14 @@ struct Arguments {
     /// Name analysis tries to extract the date from the file name, Exif analysis tries to extract the date from the EXIF data.
     #[arg(short, long, default_value = "exif_then_name")]
     analysis_mode: AnalysisType,
+    /// The EXIF date field to use, possible values are `modify`, `creation`, `digitized`. EXIF data contains several date fields.
+    /// `Modify` is the modification date, which is updated when the file is edited.
+    /// `Create` is the creation date, which is usually the date when the photo was taken.
+    /// `Digitize` is the digitized date, which is the date when the photo was digitized (for example, when converting a film photo to a digital image).
+    /// For digital cameras, this is usually the same as the creation date.
+    /// The default is `create`.
+    #[arg(long = "date-field", default_value = "create")]
+    exif_date_type: ExifDateType,
     /// The action mode, possible values are `move`, `copy`, `hardlink`, `relative_symlink`, `absolute_symlink`.
     /// `Move` will move the files, `Copy` will copy the files, `Hardlink` (alias: `hard`) will create hardlinks, `RelativeSymlink` (alias: `relsym`) will create relative symlinks, `AbsoluteSymlink` (alias: `abssym`) will create absolute symlinks.
     #[arg(short, long, default_value = "move")]
@@ -241,6 +250,7 @@ pub fn main() {
     let bracket_mode = args.bracketed_file_format.is_some();
     let result = Analyzer::new(photo_sort::AnalyzerSettings {
         analysis_type: args.analysis_mode,
+        exif_date_type: args.exif_date_type,
         source_dirs: args.source_dir.iter().map(PathBuf::from).collect(),
         target_dir: PathBuf::from(args.target_dir.as_str()),
         recursive_source: args.recursive,

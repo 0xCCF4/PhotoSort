@@ -1,5 +1,6 @@
 #![doc = include_str!("../README.md")]
 
+use crate::analysis::exif2date::ExifDateType;
 use crate::analysis::name_formatters::{BracketInfo, FileType, NameFormatterInvocationInfo};
 use action::ActionMode;
 use anyhow::{anyhow, Result};
@@ -9,6 +10,7 @@ use std::cmp::Ordering;
 use std::ffi::OsStr;
 use std::fs;
 use std::fs::{DirEntry, File};
+use std::io::{Read, Seek};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::LazyLock;
@@ -61,6 +63,7 @@ impl FromStr for AnalysisType {
 ///
 /// # Fields
 /// * `analysis_type` - An `AnalysisType` that specifies the type of analysis to perform on a file.
+/// * `exif_date_type` - Which EXIF date to use when analyzing photos. See [`ExifDateType`] for details.
 /// * `source_dirs` - A vector of `Path` references that represent the source directories to analyze.
 /// * `target_dir` - A `Path` reference that represents the target directory for the analysis results.
 /// * `recursive_source` - A boolean that indicates whether to analyze source directories recursively.
@@ -74,6 +77,7 @@ impl FromStr for AnalysisType {
 #[derive(Debug, Clone)]
 pub struct AnalyzerSettings {
     pub analysis_type: AnalysisType,
+    pub exif_date_type: ExifDateType,
     pub source_dirs: Vec<PathBuf>,
     pub target_dir: PathBuf,
     pub recursive_source: bool,
@@ -198,8 +202,11 @@ impl Analyzer {
         }
     }
 
-    fn analyze_photo_exif(file: &File) -> Result<Option<NaiveDateTime>> {
-        let exif_time = analysis::exif2date::get_exif_time(file)?;
+    fn analyze_photo_exif<S: Read + Seek>(
+        file: S,
+        date_type: ExifDateType,
+    ) -> Result<Option<NaiveDateTime>> {
+        let exif_time = analysis::exif2date::get_exif_time(file, date_type)?;
         Ok(exif_time)
     }
 
@@ -225,7 +232,7 @@ impl Analyzer {
 
         if photo {
             let file = File::open(path)?;
-            return Analyzer::analyze_photo_exif(&file);
+            return Analyzer::analyze_photo_exif(&file, self.settings.exif_date_type);
         }
         #[cfg(feature = "video")]
         if video {

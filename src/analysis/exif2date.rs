@@ -1,5 +1,40 @@
 use chrono::NaiveDateTime;
-use std::fs::File;
+use std::io::{Read, Seek};
+use std::str::FromStr;
+
+/// The type of EXIF date to retrieve.
+///
+/// # Variants
+///
+/// * `Modify`: The modification date. When opening and saving a file, this is the date that is updated by the edit-software.
+/// * `Creation`: The creation date. This is the date when the image was taken.
+/// * `Digitized`: The digitized date. This is the date when the image was digitized. For example, when converting a film photo to a digital image. For digital cameras, this is usually the same as the creation date.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ExifDateType {
+    /// The modification date. When opening and saving a file, this is the date that is updated by the edit-software.
+    Modify,
+    /// The creation date. This is the date when the image was taken.
+    Creation,
+    /// The digitized date. This is the date when the image was digitized. For example, when converting a film photo to a digital image. For digital cameras, this is usually the same as the creation date.
+    Digitized,
+}
+
+impl FromStr for ExifDateType {
+    type Err = anyhow::Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "modify" | "m" | "modified" => Ok(ExifDateType::Modify),
+            "creation" | "c" | "create" | "created" => Ok(ExifDateType::Creation),
+            "digitized" | "digitize" | "d" | "digital" | "digitalize" => {
+                Ok(ExifDateType::Digitized)
+            }
+            _ => Err(anyhow::anyhow!(
+                "Invalid EXIF date type: {}. Possible values are modify/create/digitize",
+                s
+            )),
+        }
+    }
+}
 
 /// This function retrieves the date and time from the EXIF data of a file.
 ///
@@ -20,11 +55,21 @@ use std::fs::File;
 /// * The file could not be read.
 /// * The EXIF data could not be read from the file.
 /// * The date and time could not be parsed from the EXIF data.
-pub fn get_exif_time(file: &File) -> anyhow::Result<Option<NaiveDateTime>> {
+pub fn get_exif_time<R: Read + Seek>(
+    file: R,
+    date_type: ExifDateType,
+) -> anyhow::Result<Option<NaiveDateTime>> {
     let mut bufreader = std::io::BufReader::new(file);
     let exifreader = exif::Reader::new();
     let exif = exifreader.read_from_container(&mut bufreader)?;
-    let datetime = exif.get_field(exif::Tag::DateTime, exif::In::PRIMARY);
+    let datetime = exif.get_field(
+        match date_type {
+            ExifDateType::Modify => exif::Tag::DateTime,
+            ExifDateType::Creation => exif::Tag::DateTimeOriginal,
+            ExifDateType::Digitized => exif::Tag::DateTimeDigitized,
+        },
+        exif::In::PRIMARY,
+    );
 
     Ok(datetime
         .map(|field| {
