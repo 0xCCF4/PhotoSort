@@ -1,6 +1,6 @@
 use crate::indicatif_log_bridge::LogWrapper;
 use chrono::Utc;
-use clap::{arg, Parser};
+use clap::Parser;
 use fern::colors::{Color, ColoredLevelConfig};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use log::{debug, error, info, trace, LevelFilter};
