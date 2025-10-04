@@ -29,8 +29,7 @@ impl FromStr for ExifDateType {
                 Ok(ExifDateType::Digitized)
             }
             _ => Err(anyhow::anyhow!(
-                "Invalid EXIF date type: {}. Possible values are modify/create/digitize",
-                s
+                "Invalid EXIF date type: {s}. Possible values are modify/create/digitize"
             )),
         }
     }

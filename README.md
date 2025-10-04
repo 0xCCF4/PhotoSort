@@ -85,7 +85,8 @@ Options:
   -f, --file-format <FILE_FORMAT>      The target file format. Everything outside a {...} block is copied as is. The
                                        target file format may contain "/" to indicate that the file should be placed in
                                        a subdirectory. Use the `--mkdir` flag to create the subdirectories. `{name}` is
-                                       replaced with a filename without the date part. `{dup}` is replaced with a number
+                                       replaced with a filename without the date part.  `{original_name}` is replaced with
+                                       the original filename without modification.`{dup}` is replaced with a number
                                        if a file with the target name already exists. `{date}` is replaced with the date
                                        string, formatted according to the date_format parameter. `{date?format}` is
                                        replaced with the date string, formatted according to the "format" parameter.
