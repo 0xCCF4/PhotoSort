@@ -20,7 +20,8 @@ pub struct NameFormatterInvocationInfo<'a> {
     pub duplicate_counter: Option<u32>,
     pub extension: String,
     pub bracket_info: Option<&'a BracketInfo>,
-    pub original_name: String,
+    pub original_name: String, // name without extension
+    pub original_filename: String, // original_name + extension
 }
 
 #[derive(Debug, Clone)]

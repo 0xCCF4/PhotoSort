@@ -523,8 +523,14 @@ impl Analyzer {
                 .map_or(String::new(), |ext| ext.to_string_lossy().to_string()),
             bracket_info: bracket_info.as_ref(),
             original_name: path
+                .with_extension("")
                 .file_name()
-                .unwrap_or(OsStr::new(""))
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string(),
+            original_filename: path
+                .file_name()
+                .unwrap_or_default()
                 .to_string_lossy()
                 .to_string(),
         };
