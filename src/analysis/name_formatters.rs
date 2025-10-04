@@ -20,6 +20,7 @@ pub struct NameFormatterInvocationInfo<'a> {
     pub duplicate_counter: Option<u32>,
     pub extension: String,
     pub bracket_info: Option<&'a BracketInfo>,
+    pub original_name: String,
 }
 
 #[derive(Debug, Clone)]
@@ -64,3 +65,5 @@ mod extension;
 pub use extension::*;
 mod bracketed;
 pub use bracketed::*;
+mod original_name;
+pub use original_name::*;

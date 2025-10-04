@@ -112,15 +112,14 @@ pub fn file_action<P: AsRef<Path>, Q: AsRef<Path>>(
     let target = target.as_ref();
 
     error_file_exists(target)
-        .map_err(|e| anyhow!("Target file already exists: {:?} - {:?}", target, e))?;
+        .map_err(|e| anyhow!("Target file already exists: {target:?} - {e:?}"))?;
 
     // check if parent folder exists
     if let Some(parent) = target.parent() {
         if !parent.exists() {
             if !mkdir {
                 return Err(anyhow!(
-                    "Target subfolder does not exist. Use --mkdir to create it: {:?}",
-                    parent
+                    "Target subfolder does not exist. Use --mkdir to create it: {parent:?}"
                 ));
             }
 
@@ -128,7 +127,7 @@ pub fn file_action<P: AsRef<Path>, Q: AsRef<Path>>(
                 error!("[Mkdir] {}", parent.display());
             } else {
                 fs::create_dir_all(parent).map_err(|e| {
-                    anyhow!("Failed to create target subfolder: {:?} - {:?}", parent, e)
+                    anyhow!("Failed to create target subfolder: {parent:?} - {e:?}")
                 })?;
             }
         }
@@ -148,7 +147,7 @@ pub fn file_action<P: AsRef<Path>, Q: AsRef<Path>>(
 
     match result {
         Ok(()) => Ok(()),
-        Err(e) => Err(anyhow!("Failed to perform action: {:?}", e)),
+        Err(e) => Err(anyhow!("Failed to perform action: {e:?}")),
     }
 }
 

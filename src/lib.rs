@@ -1,4 +1,5 @@
 #![doc = include_str!("../README.md")]
+#![allow(clippy::unnecessary_debug_formatting)]
 
 use crate::analysis::exif2date::ExifDateType;
 use crate::analysis::name_formatters::{BracketInfo, FileType, NameFormatterInvocationInfo};
@@ -163,7 +164,7 @@ impl Analyzer {
         }
         for source in &analyzer.settings.source_dirs {
             if !source.exists() {
-                return Err(anyhow!("Source directory {:?} does not exist", source));
+                return Err(anyhow!("Source directory {source:?} does not exist"));
             }
         }
 
@@ -281,7 +282,7 @@ impl Analyzer {
             AnalysisType::OnlyExif => {
                 let exif_result = self
                     .analyze_exif(path)
-                    .map_err(|e| anyhow!("Error analyzing Exif data: {}", e))?;
+                    .map_err(|e| anyhow!("Error analyzing Exif data: {e}"))?;
                 let name_result = self.analyze_name(name);
 
                 match name_result {
@@ -380,7 +381,7 @@ impl Analyzer {
                     let mut command_substitution = match formatter.replacement_text(matched, info) {
                         Ok(replaced_text) => replaced_text,
                         Err(err) => {
-                            return Err(anyhow!("Failed to format the file name with the given format string: {:?}. Got error: {{{}}}", actual_command, err));
+                            return Err(anyhow!("Failed to format the file name with the given format string: {actual_command:?}. Got error: {{{err}}}"));
                         }
                     };
 
@@ -398,7 +399,7 @@ impl Analyzer {
             }
 
             if !found_command {
-                return Err(anyhow!("Failed to format file name with the given format string. There exists no formatter for the format command: {{{}}}", actual_command));
+                return Err(anyhow!("Failed to format file name with the given format string. There exists no formatter for the format command: {{{actual_command}}}"));
             }
 
             current_string_index = end;
@@ -521,6 +522,11 @@ impl Analyzer {
                 .extension()
                 .map_or(String::new(), |ext| ext.to_string_lossy().to_string()),
             bracket_info: bracket_info.as_ref(),
+            original_name: path
+                .file_name()
+                .unwrap_or(OsStr::new(""))
+                .to_string_lossy()
+                .to_string(),
         };
 
         let new_file_path = |file_name_info: &NameFormatterInvocationInfo| -> Result<PathBuf> {
@@ -546,7 +552,7 @@ impl Analyzer {
                 .collect();
             for entry in &path_split {
                 if let Err(err) = entry {
-                    return Err(anyhow!("Failed to format filename: {}", err));
+                    return Err(anyhow!("Failed to format filename: {err}"));
                 }
             }
             let path_split = path_split.into_iter().map(Result::unwrap);
