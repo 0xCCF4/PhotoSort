@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.9](https://github.com/0xCCF4/PhotoSort/compare/v0.2.8...v0.2.9) - 2025-10-04
+
+### Added
+
+- added format modifier {original_name}
+
+### Other
+
+- fixed cargo fmt errors
+- *(deps)* bump actions-rust-lang/setup-rust-toolchain
+- Merge pull request #132 from 0xCCF4/dependabot/cargo/clap-4.5.48
+- *(deps)* bump clap from 4.5.47 to 4.5.48
+- *(deps)* bump actions-rust-lang/setup-rust-toolchain
+
 ## [0.2.8](https://github.com/0xCCF4/PhotoSort/compare/v0.2.7...v0.2.8) - 2025-09-15
 
 ### Added
