@@ -39,3 +39,17 @@ jobs:
         with:
           command: install
           args: photo_sort ${{ matrix.feature_flag }}
+
+  nix_build:
+    name: 'Build nix version for <nixpkgs/${{ matrix.nixpkgs }}>'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        nixpkgs:
+          - release-24.11
+          - release-25.05
+          - nixos-unstable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - run: timeout 5m nix build github:0xCCF4/PhotoSort -- -L --no-update-lock-file --no-write-lock-file --override-input nixpkgs github:nixos/nixpkgs/${{ matrix.nixpkgs }}
