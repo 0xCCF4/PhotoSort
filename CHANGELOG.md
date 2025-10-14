@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.11](https://github.com/0xCCF4/PhotoSort/compare/v0.2.10...v0.2.11) - 2025-10-14
+
+### Added
+
+- *(ci)* added automatic nix build tests
+- *(ci)* added automatic nix build tests
+- added nix build system and packaging support
+
+### Fixed
+
+- compile on older rust version was not possible due to use of unstable library feature 'integer_sign_cast'
+- *(ci)* fixed ci tests failed due to outdated rust version in nixpkgs/24.11
+
+### Other
+
+- *(deps)* bump github/codeql-action from 3 to 4
+- *(deps)* bump actions-rust-lang/setup-rust-toolchain
+
 ## [0.2.10](https://github.com/0xCCF4/PhotoSort/compare/v0.2.9...v0.2.10) - 2025-10-04
 
 ### Added
