@@ -31,6 +31,25 @@ use std::mem;
 // SUCH DAMAGE.
 //
 
+trait CastSigned<T> {
+    fn cast_signed_non_nightly(self) -> T;
+}
+impl CastSigned<i8> for u8 {
+    fn cast_signed_non_nightly(self) -> i8 {
+        self as i8
+    }
+}
+impl CastSigned<i16> for u16 {
+    fn cast_signed_non_nightly(self) -> i16 {
+        self as i16
+    }
+}
+impl CastSigned<i32> for u32 {
+    fn cast_signed_non_nightly(self) -> i32 {
+        self as i32
+    }
+}
+
 type Parser = fn(&[u8], usize, usize) -> Value;
 
 // Return the length of a single value and the parser of the type.
@@ -109,7 +128,7 @@ where
 fn parse_sbyte(data: &[u8], offset: usize, count: usize) -> Value {
     let bytes = data[offset..offset + count]
         .iter()
-        .map(|x| x.cast_signed())
+        .map(|x| x.cast_signed_non_nightly())
         .collect();
     Value::SByte(bytes)
 }
@@ -127,7 +146,7 @@ where
 {
     let mut val = Vec::with_capacity(count);
     for i in 0..count {
-        val.push(E::loadu16(data, offset + i * 2).cast_signed());
+        val.push(E::loadu16(data, offset + i * 2).cast_signed_non_nightly());
     }
     Value::SShort(val)
 }
@@ -138,7 +157,7 @@ where
 {
     let mut val = Vec::with_capacity(count);
     for i in 0..count {
-        val.push(E::loadu32(data, offset + i * 4).cast_signed());
+        val.push(E::loadu32(data, offset + i * 4).cast_signed_non_nightly());
     }
     Value::SLong(val)
 }
@@ -150,8 +169,8 @@ where
     let mut val = Vec::with_capacity(count);
     for i in 0..count {
         val.push(SRational {
-            num: E::loadu32(data, offset + i * 8).cast_signed(),
-            denom: E::loadu32(data, offset + i * 8 + 4).cast_signed(),
+            num: E::loadu32(data, offset + i * 8).cast_signed_non_nightly(),
+            denom: E::loadu32(data, offset + i * 8 + 4).cast_signed_non_nightly(),
         });
     }
     Value::SRational(val)
