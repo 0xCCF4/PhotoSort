@@ -196,6 +196,12 @@ or
 cargo install --git https://github.com/0xCCF4/PhotoSort
 ```
 
+or
+
+```bash
+nix run github:0xCCF4/PhotoSort -- <args>
+```
+
 The `photo_sort` binary will then be available.
 
 For using the video sorting feature follow the instructions on <https://crates.io/crates/ffmpeg-next> and respective
