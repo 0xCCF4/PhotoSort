@@ -50,6 +50,6 @@ jobs:
           - release-25.05
           - nixos-unstable
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: cachix/install-nix-action@v31
       - run: timeout 5m nix build github:0xCCF4/PhotoSort -L --no-update-lock-file --no-write-lock-file --override-input nixpkgs github:nixos/nixpkgs/${{ matrix.nixpkgs }}
