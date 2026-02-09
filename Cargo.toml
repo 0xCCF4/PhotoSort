@@ -22,7 +22,7 @@ anyhow = "1.0.101"
 chrono = "0.4.43"
 kamadak-exif = "0.6.1"
 clap = { version = "4.5.57", features = ["derive"] }
-regex = "1.12.2"
+regex = "1.12.3"
 log = "0.4.29"
 filetime = "0.2.27"
 symlink = "0.1.0"
