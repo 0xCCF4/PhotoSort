@@ -21,7 +21,7 @@ documentation = "https://docs.rs/photo_sort"
 anyhow = "1.0.102"
 chrono = "0.4.44"
 kamadak-exif = "0.6.1"
-clap = { version = "4.5.60", features = ["derive"] }
+clap = { version = "4.6.0", features = ["derive"] }
 regex = "1.12.3"
 log = "0.4.29"
 filetime = "0.2.27"
