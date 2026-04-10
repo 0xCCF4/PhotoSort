@@ -358,7 +358,17 @@ pub fn main() {
         }
 
         if bracket_mode {
-            match get_bracketing_info(&file) {
+            let photo_file = match is_photo_extension(&file, &context) {
+                Ok(is_video) => is_video,
+                Err(e) => {
+                    eprintln!("The file {file:?} has an invalid file extension which can not be represented as a UTF-8 string. Error: {e}");
+                    return
+                }
+            };
+            if !photo_file {
+                trace!("File {file:?} is not detected as a photo file, skipping bracketing analysis");
+            }
+            match photo_file.then(|| get_bracketing_info(&file)).transpose().map(Option::flatten) {
                 Ok(Some(info)) => {
                     let drain = if let Some(last) = bracketed_queue.back() {
                         if last.0.parent() != file.parent() {
@@ -534,6 +544,17 @@ fn process_file(file: PathBuf, context: &ExecutionContext, bracket_info: Option<
                 }
                 output.send(()).expect("thread pool channel closed");
             });
+        }
+    }
+}
+
+fn is_photo_extension<P: AsRef<Path>>(path: P, context: &ExecutionContext) -> anyhow::Result<bool> {
+    match context {
+        ExecutionContext::SingleThreaded(context) => {
+            context.analyzer.is_valid_photo_extension(path.as_ref().extension())
+        }
+        ExecutionContext::MultiThreaded(context) => {
+            context.analyzer.is_valid_photo_extension(path.as_ref().extension())
         }
     }
 }

@@ -604,7 +604,18 @@ impl Analyzer {
         Ok(())
     }
 
-    fn is_valid_photo_extension(&self, ext: Option<&OsStr>) -> Result<bool> {
+    /// Checks if a file has a valid photo extension.
+    ///
+    /// # Arguments
+    /// * `ext` - An `Option<&OsStr>` that represents the file extension to check.
+    ///
+    /// # Returns
+    /// * `Result<bool>` - Returns `Ok(true)` if the file has a valid photo extension, `Ok(false)` if it does not
+    ///
+    /// # Errors
+    /// This function will return an error if:
+    /// * The file extension is not valid UTF-8.
+    pub fn is_valid_photo_extension(&self, ext: Option<&OsStr>) -> Result<bool> {
         match ext {
             None => Ok(false),
             Some(ext) => {
@@ -621,8 +632,19 @@ impl Analyzer {
         }
     }
 
+    /// Checks if a file has a valid video extension.
+    ///
+    /// # Arguments
+    /// * `ext` - An `Option<&OsStr>` that represents the file extension to check.
+    ///
+    /// # Returns
+    /// * `Result<bool>` - Returns `Ok(true)` if the file has a valid video extension, `Ok(false)` if it does not
+    ///
+    /// # Errors
+    /// This function will return an error if:
+    /// * The file extension is not valid UTF-8.
     #[cfg(feature = "video")]
-    fn is_valid_video_extension(&self, ext: Option<&OsStr>) -> Result<bool> {
+    pub fn is_valid_video_extension(&self, ext: Option<&OsStr>) -> Result<bool> {
         match ext {
             None => Ok(false),
             Some(ext) => {
@@ -639,7 +661,18 @@ impl Analyzer {
         }
     }
 
-    fn is_valid_extension(&self, ext: Option<&OsStr>) -> Result<bool> {
+    /// Checks if a file has a valid extension (photo or video).
+    ///
+    /// # Arguments
+    /// * `ext` - An `Option<&OsStr>` that represents the file extension to check.
+    ///
+    /// # Returns
+    /// * `Result<bool>` - Returns `Ok(true)` if the file has a valid extension, `Ok(false)` if it does not
+    ///
+    /// # Errors
+    /// This function will return an error if:
+    /// * The file extension is not valid UTF-8.
+    pub fn is_valid_extension(&self, ext: Option<&OsStr>) -> Result<bool> {
         let valid_photo = self.is_valid_photo_extension(ext)?;
         #[cfg(feature = "video")]
         let valid_video = self.is_valid_video_extension(ext)?;
