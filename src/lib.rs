@@ -24,16 +24,16 @@ pub mod name;
 ///
 /// # Variants
 ///
-/// * `OnlyExif` - Represents the action of analyzing a file based only on its Exif data.
+/// * `OnlyEmbedded` - Represents the action of analyzing a file based only on its Exif data/Video metadata.
 /// * `OnlyName` - Represents the action of analyzing a file based only on its name.
-/// * `ExifThenName` - Represents the action of analyzing a file based first on its Exif data, then on its name if the Exif data is not sufficient.
-/// * `NameThenExif` - Represents the action of analyzing a file based first on its name, then on its Exif data if the name is not sufficient.
+/// * `EmbeddedThenName` - Represents the action of analyzing a file based first on its Exif data/Video metadata, then on its name if the Exif data/Video metadata is not sufficient.
+/// * `NameThenEmbedded` - Represents the action of analyzing a file based first on its name, then on its Exif data/Video metadata if the name is not sufficient.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum AnalysisType {
-    OnlyExif,
+    OnlyEmbedded,
     OnlyName,
-    ExifThenName,
-    NameThenExif,
+    EmbeddedThenName,
+    NameThenEmbedded,
 }
 /// Implementation of the `FromStr` trait for `AnalysisType`.
 ///
@@ -51,10 +51,14 @@ impl FromStr for AnalysisType {
 
     fn from_str(s: &str) -> Result<Self> {
         match s.to_lowercase().as_str() {
-            "only_exif" | "exif" => Ok(AnalysisType::OnlyExif),
-            "only_name" | "name" => Ok(AnalysisType::OnlyName),
-            "exif_then_name" | "exif_name" => Ok(AnalysisType::ExifThenName),
-            "name_then_exif" | "name_exif" => Ok(AnalysisType::NameThenExif),
+            "only_exif" | "exif" | "embedded" | "only_embedded" | "metadata" | "e" | "m" => {
+                Ok(AnalysisType::OnlyEmbedded)
+            }
+            "only_name" | "name" | "n" => Ok(AnalysisType::OnlyName),
+            "exif_then_name" | "exif_name" | "embedded_then_name" | "metadata_then_name" | "mn"
+            | "en" => Ok(AnalysisType::EmbeddedThenName),
+            "name_then_exif" | "name_exif" | "name_then_embedded" | "name_then_metadata" | "nm"
+            | "ne" => Ok(AnalysisType::NameThenEmbedded),
             _ => Err(anyhow::anyhow!("Invalid analysis type")),
         }
     }
@@ -129,7 +133,7 @@ pub struct Analyzer {
 /// * [`new`](#method.new) - Creates a new `Analyzer` with the given settings.
 /// * [`add_transformer`](#method.add_transformer) - Adds a name transformer to the `Analyzer`.
 /// * [`analyze_name`](#method.analyze_name) - Analyzes the name of a file.
-/// * [`analyze_exif`](#method.analyze_exif) - Analyzes the Exif data of a file.
+/// * [`analyze_embedded_metadata`](#method.analyze_embedded_metadata) - Analyzes the Exif data/Video metadata of a file.
 /// * [`analyze`](#method.analyze) - Analyzes a file based on the `Analyzer`'s settings.
 /// * [`compose_file_name`](#method.compose_file_name) - Composes a file name based on the given date, name, and duplicate counter.
 /// * [`do_file_action`](#method.do_file_action) - Performs the file action specified in the `Analyzer`'s settings on a file.
@@ -217,7 +221,7 @@ impl Analyzer {
         Ok(video_time)
     }
 
-    fn analyze_exif<A: AsRef<Path>>(&self, path: A) -> Result<Option<NaiveDateTime>> {
+    fn analyze_embedded_metadata<A: AsRef<Path>>(&self, path: A) -> Result<Option<NaiveDateTime>> {
         let path = path.as_ref();
 
         #[cfg(feature = "video")]
@@ -279,10 +283,10 @@ impl Analyzer {
         }
 
         Ok(match self.settings.analysis_type {
-            AnalysisType::OnlyExif => {
+            AnalysisType::OnlyEmbedded => {
                 let exif_result = self
-                    .analyze_exif(path)
-                    .map_err(|e| anyhow!("Error analyzing Exif data: {e}"))?;
+                    .analyze_embedded_metadata(path)
+                    .map_err(|e| anyhow!("Error analyzing embedded data: {e}"))?;
                 let name_result = self.analyze_name(name);
 
                 match name_result {
@@ -291,11 +295,15 @@ impl Analyzer {
                 }
             }
             AnalysisType::OnlyName => self.analyze_name(name)?,
-            AnalysisType::ExifThenName => {
-                let exif_result = self.analyze_exif(path);
-                let exif_result = match exif_result {
+            AnalysisType::EmbeddedThenName => {
+                let metadata_result = self.analyze_embedded_metadata(path);
+                let exif_result = match metadata_result {
                     Err(e) => {
-                        warn!("Error analyzing Exif data: {} for {}", e, path.display());
+                        warn!(
+                            "Error analyzing embedded data: {} for {}",
+                            e,
+                            path.display()
+                        );
                         info!("Falling back to name analysis");
                         None
                     }
@@ -311,10 +319,10 @@ impl Analyzer {
                     None => name_result?,
                 }
             }
-            AnalysisType::NameThenExif => {
+            AnalysisType::NameThenEmbedded => {
                 let name_result = self.analyze_name(name)?;
                 if name_result.0.is_none() {
-                    (self.analyze_exif(path)?, name_result.1)
+                    (self.analyze_embedded_metadata(path)?, name_result.1)
                 } else {
                     name_result
                 }

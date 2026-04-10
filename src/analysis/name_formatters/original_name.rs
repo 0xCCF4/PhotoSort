@@ -19,7 +19,7 @@ impl NameFormatter for FormatOriginalName {
         _capture: regex::Captures<'_>,
         invocation_info: &NameFormatterInvocationInfo,
     ) -> Result<String> {
-        Ok(invocation_info.original_name.to_string())
+        Ok(invocation_info.original_name.clone())
     }
 }
 
@@ -40,6 +40,6 @@ impl NameFormatter for FormatOriginalFileName {
         _capture: regex::Captures<'_>,
         invocation_info: &NameFormatterInvocationInfo,
     ) -> Result<String> {
-        Ok(invocation_info.original_filename.to_string())
+        Ok(invocation_info.original_filename.clone())
     }
 }

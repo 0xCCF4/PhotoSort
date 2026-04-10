@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use filetime::FileTime;
-use log::{debug, error, trace, warn};
+use log::{debug, error, trace};
 use std::fmt::{Display, Formatter};
 use std::fs;
 use std::path::Path;
