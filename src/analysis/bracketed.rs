@@ -28,7 +28,7 @@ pub fn get_bracketing_info<P: AsRef<Path>>(
     let exifreader = exif::Reader::new();
     let exif = exifreader
         .read_from_container(&mut bufreader)
-        .map_err(|e| anyhow!("Error while reading EXIF {e}"))?;
+        .map_err(|e| anyhow!("Error while reading EXIF for bracketing info extraction {e}"))?;
 
     let Some(x) = exif.get_field(exif::Tag::MakerNote, exif::In::PRIMARY) else {
         return Ok(None);
