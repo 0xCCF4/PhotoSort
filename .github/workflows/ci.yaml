@@ -60,8 +60,8 @@ jobs:
     strategy:
       matrix:
         nixpkgs:
-          - release-24.11
           - release-25.05
+          - release-25.11
           - nixos-unstable
     steps:
       - uses: actions/checkout@v6
