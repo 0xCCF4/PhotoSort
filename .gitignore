@@ -19,4 +19,7 @@ target/
 # Nix
 result
 
-tests
+tests/**/*.JPG
+tests/**/*.mp4
+tests/**/*.jpg
+tests/**/*.txt
