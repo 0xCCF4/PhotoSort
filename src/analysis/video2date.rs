@@ -1,9 +1,9 @@
 use anyhow::anyhow;
 use chrono::NaiveDateTime;
 use ffmpeg_next as ffmpeg;
+use log::trace;
 use std::path::Path;
 use std::sync::Mutex;
-use log::trace;
 
 static FFMPEG_INITIALIZED: Mutex<bool> = Mutex::new(false);
 
