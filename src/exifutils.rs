@@ -35,16 +35,19 @@ trait CastSigned<T> {
     fn cast_signed_non_nightly(self) -> T;
 }
 impl CastSigned<i8> for u8 {
+    #[allow(clippy::cast_possible_wrap)]
     fn cast_signed_non_nightly(self) -> i8 {
         self as i8
     }
 }
 impl CastSigned<i16> for u16 {
+    #[allow(clippy::cast_possible_wrap)]
     fn cast_signed_non_nightly(self) -> i16 {
         self as i16
     }
 }
 impl CastSigned<i32> for u32 {
+    #[allow(clippy::cast_possible_wrap)]
     fn cast_signed_non_nightly(self) -> i32 {
         self as i32
     }

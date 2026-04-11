@@ -357,6 +357,7 @@ pub fn main() {
             bar.set_message(format!("{}", file.display()));
         }
 
+        #[allow(clippy::unnecessary_debug_formatting)]
         if bracket_mode {
             let photo_file = match is_photo_extension(&file, &context) {
                 Ok(is_video) => is_video,

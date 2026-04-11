@@ -13,11 +13,11 @@ fn init_ffmpeg() -> anyhow::Result<()> {
             if *guard {
                 return Ok(());
             }
-            ffmpeg::init().map_err(|e| anyhow!("Error initializing ffmpeg: {:?}", e))?;
+            ffmpeg::init().map_err(|e| anyhow!("Error initializing ffmpeg: {e:?}"))?;
             *guard = true;
             Ok(())
         }
-        Err(poisoned) => Err(anyhow!("Mutex poisoned: {:?}", poisoned)),
+        Err(poisoned) => Err(anyhow!("Mutex poisoned: {poisoned:?}")),
     }
 }
 
@@ -42,10 +42,7 @@ pub fn get_video_time<P: AsRef<Path>>(path: P) -> anyhow::Result<Option<NaiveDat
     let result = instance
         .metadata()
         .get("creation_time")
-        .map(|x| {
-            trace!("Found creation_time ({x}) for video: {:?}", path.as_ref());
-            x
-        })
+        .inspect(|x| trace!("Found creation_time ({x}) for video: {:?}", path.as_ref()))
         .map(|v| NaiveDateTime::parse_from_str(v, "%+")); // ISO 8601 / RFC 3339 format
 
     Ok(result.transpose()?)
