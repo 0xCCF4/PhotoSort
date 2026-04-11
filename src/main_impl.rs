@@ -64,9 +64,22 @@ struct Arguments {
     /// The target file format for files that do not match the specified extensions list. If not present
     /// files that do not match the extension list are ignored, hence not moved, copied etc. See the `file_format` for an extensive description
     /// of possible format values. By using `--unknown others/{name}{.:ext}` all unknown files are moved to the subdirectory "others" relative
-    /// to the target directory (specified by `--target-dir`).
+    /// to the target directory (specified by `--target-dir`). To exclude files from being processed at all, use the `--exclude` option.
     #[arg(long = "unknown")]
     unknown_file_format: Option<String>,
+    /// Files to exclude completely from processing. Files matched by this pattern are never touched, even by the `--unknown` argument. This
+    /// option could be useful to exclude files like `Thumbs.db` or `.DS_Store` from being moved to the `--unknown` folder. The `--exclude`
+    /// option matches the relative file path to the source directories to the given string. `*` may be used to indicate any number of any characters,
+    /// excluding path separators. `**` may be used to indicate any number of any characters, including path separators. For example, `--exclude abc/*/test/**/Thumbs.db`
+    /// would exclude any file named `Thumbs.db` in a `test/<subdir>/test/<any subdirs>/Thumbs.db` folder structure. The `--exclude` may be used multiple times
+    /// to exclude multiple patterns. If any pattern matches, the file is excluded. The `--exclude-regex` option works the same but accepts a regular
+    /// expression instead of literals with wildcards.
+    #[arg(long = "exclude")]
+    exclude_files: Vec<String>,
+    /// Same as `--exclude` but accepts regular expressions instead of literals with wildcards. `*` and `**` wildcards do not work in the regex patterns but
+    /// are interpreted as regex match the last pattern character 0 or more times. For a list of supported regex patterns, see <https://docs.rs/regex/latest/regex/#syntax>
+    #[arg(long = "exclude-regex")]
+    exclude_files_regex: Vec<String>,
     /// The target file format for files that can be identified as bracketed photo set with different exposure levels. By using `--bracket` all
     /// files identified as bracketed are moved/renamed/copied with the specified format string instead of the default one specified by `--target-dir`.
     /// The `--bracket` argument provides the following additional format specifiers:
