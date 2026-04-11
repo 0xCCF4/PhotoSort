@@ -3,6 +3,7 @@ use chrono::NaiveDateTime;
 use ffmpeg_next as ffmpeg;
 use std::path::Path;
 use std::sync::Mutex;
+use log::trace;
 
 static FFMPEG_INITIALIZED: Mutex<bool> = Mutex::new(false);
 
@@ -41,7 +42,11 @@ pub fn get_video_time<P: AsRef<Path>>(path: P) -> anyhow::Result<Option<NaiveDat
     let result = instance
         .metadata()
         .get("creation_time")
-        .map(|v| NaiveDateTime::parse_from_str(v, "%Y-%m-%dT%H:%M:%S%Z"));
+        .map(|x| {
+            trace!("Found creation_time ({x}) for video: {:?}", path.as_ref());
+            x
+        })
+        .map(|v| NaiveDateTime::parse_from_str(v, "%+")); // ISO 8601 / RFC 3339 format
 
     Ok(result.transpose()?)
 }

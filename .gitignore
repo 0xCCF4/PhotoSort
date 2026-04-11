@@ -18,3 +18,5 @@ target/
 
 # Nix
 result
+
+tests
