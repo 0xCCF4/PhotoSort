@@ -136,9 +136,10 @@ Options:
   -e, --extensions [<EXTENSIONS>...]   A comma separated list of file extensions to include in the analysis
                                        [default: jpg,jpeg,png,tiff,heif,heic,avif,webp]
                                        
-  -a, --analysis-mode <ANALYSIS_MODE>  The sorting mode, possible values are name_then_exif, exif_then_name, only_name,
-                                       only_exif. Name analysis tries to extract the date from the file name, Exif
-                                       analysis tries to extract the date from the EXIF data [default: exif_then_name]
+  -a, --analysis-mode <ANALYSIS_MODE>  The sorting mode, possible values are `name_then_metadata`, `metadata_then_name`,
+                                       `only_name`, `only_metadata`. Name analysis tries to extract the date from the file name,
+                                       Metadata analysis tries to extract the date from the EXIF data/video metadata
+                                       [default: exit/video metadata then name]
                                        
        --date-field <EXIF_DATE_TYPE>   The EXIF date field to use, possible values are `modify`, `creation`, `digitized`.
                                        EXIF data contains several date fields. `Modify` is the modification date, which

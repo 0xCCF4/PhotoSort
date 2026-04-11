@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use filetime::FileTime;
-use log::{debug, error, warn};
+use log::{debug, error, trace};
 use std::fmt::{Display, Formatter};
 use std::fs;
 use std::path::Path;
@@ -201,8 +201,8 @@ fn move_file<A: AsRef<Path>, B: AsRef<Path>>(source: A, target: B) -> std::io::R
 
     let result = fs::rename(source, target);
     if let Err(err) = result {
-        warn!(
-            "Renaming file failed, falling back to cut/paste: {:?} for file {} -> {}",
+        trace!(
+            "Renaming file failed, falling back to cut/paste (maybe cross-fs rename operation?): {:?} for file {} -> {}",
             err,
             source.display(),
             target.display()

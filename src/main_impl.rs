@@ -91,9 +91,15 @@ struct Arguments {
     /// A comma separated list of video extensions to include in the analysis.
     #[arg(long, default_value = "mp4,mov,avi", value_delimiter = ',', num_args = 0..)]
     video_extensions: Vec<String>,
+    #[cfg(not(feature = "video"))]
     /// The sorting mode, possible values are `name_then_exif`, `exif_then_name`, `only_name`, `only_exif`.
     /// Name analysis tries to extract the date from the file name, Exif analysis tries to extract the date from the EXIF data.
     #[arg(short, long, default_value = "exif_then_name")]
+    analysis_mode: AnalysisType,
+    #[cfg(feature = "video")]
+    /// The sorting mode, possible values are `name_then_metadata`, `metadata_then_name`, `only_name`, `only_metadata`.
+    /// Name analysis tries to extract the date from the file name, Metadata analysis tries to extract the date from the EXIF data/video metadata.
+    #[arg(short, long, default_value = "metadata_then_name")]
     analysis_mode: AnalysisType,
     /// The EXIF date field to use, possible values are `modify`, `creation`, `digitized`. EXIF data contains several date fields.
     /// `Modify` is the modification date, which is updated when the file is edited.
@@ -352,7 +358,23 @@ pub fn main() {
         }
 
         if bracket_mode {
-            match get_bracketing_info(&file) {
+            let photo_file = match is_photo_extension(&file, &context) {
+                Ok(is_video) => is_video,
+                Err(e) => {
+                    eprintln!("The file {file:?} has an invalid file extension which can not be represented as a UTF-8 string. Error: {e}");
+                    return;
+                }
+            };
+            if !photo_file {
+                trace!(
+                    "File {file:?} is not detected as a photo file, skipping bracketing analysis"
+                );
+            }
+            match photo_file
+                .then(|| get_bracketing_info(&file))
+                .transpose()
+                .map(Option::flatten)
+            {
                 Ok(Some(info)) => {
                     let drain = if let Some(last) = bracketed_queue.back() {
                         if last.0.parent() != file.parent() {
@@ -529,5 +551,16 @@ fn process_file(file: PathBuf, context: &ExecutionContext, bracket_info: Option<
                 output.send(()).expect("thread pool channel closed");
             });
         }
+    }
+}
+
+fn is_photo_extension<P: AsRef<Path>>(path: P, context: &ExecutionContext) -> anyhow::Result<bool> {
+    match context {
+        ExecutionContext::SingleThreaded(context) => context
+            .analyzer
+            .is_valid_photo_extension(path.as_ref().extension()),
+        ExecutionContext::MultiThreaded(context) => context
+            .analyzer
+            .is_valid_photo_extension(path.as_ref().extension()),
     }
 }
