@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.12](https://github.com/0xCCF4/PhotoSort/compare/v0.2.11...v0.2.12) - 2026-04-11
+
+### Fixed
+
+- use ISO 8601 for video creation_time parsing, since this is the format used by ffmpeg
+- ran cargo fmt
+- do bracketing analysis only for photo files not for all files
+- rename occurrences of exif to metadata if videos are processed too
+- make comment on exif analysis error more descriptive
+- change priority of log msg when renaming op fails on move
+
+### Other
+
+- *(fix)* fix clippy warning
+- *(fix)* release-plz fails when excluding entire tests folder due to .gitkeep files
+- ran cargo fmt
+- now checking compatibility with version 25.05+
+- *(deps)* bump clap from 4.5.60 to 4.6.0
+- *(deps)* bump dependabot/fetch-metadata from 2.5.0 to 3.0.0
+- *(deps)* bump ffmpeg-next from 8.0.0 to 8.1.0
+- *(deps)* bump actions-rust-lang/setup-rust-toolchain
+- *(deps)* bump actions-rust-lang/setup-rust-toolchain
+- *(deps)* bump chrono from 0.4.43 to 0.4.44
+- *(deps)* bump clap from 4.5.58 to 4.5.60
+- *(deps)* bump anyhow from 1.0.101 to 1.0.102
+- Merge pull request #163 from 0xCCF4/dependabot/cargo/clap-4.5.58
+- *(deps)* bump clap from 4.5.57 to 4.5.58
+- *(deps)* bump regex from 1.12.2 to 1.12.3
+- Merge pull request #160 from 0xCCF4/dependabot/cargo/clap-4.5.57
+- *(deps)* bump clap from 4.5.56 to 4.5.57
+- *(deps)* bump clap from 4.5.54 to 4.5.56
+- Merge pull request #157 from 0xCCF4/dependabot/cargo/chrono-0.4.43
+- *(deps)* bump chrono from 0.4.42 to 0.4.43
+- *(deps)* bump dependabot/fetch-metadata from 2.4.0 to 2.5.0
+- *(deps)* bump clap from 4.5.53 to 4.5.54
+- *(deps)* bump log from 0.4.28 to 0.4.29
+- *(deps)* bump clap from 4.5.51 to 4.5.53
+- *(deps)* bump actions/checkout from 5 to 6
+- *(deps)* bump indicatif from 0.18.2 to 0.18.3
+- Merge pull request #149 from 0xCCF4/dependabot/cargo/indicatif-0.18.2
+- *(deps)* bump indicatif from 0.18.1 to 0.18.2
+- Merge pull request #147 from 0xCCF4/dependabot/cargo/clap-4.5.50
+- *(deps)* bump indicatif from 0.18.0 to 0.18.1
+- *(deps)* bump regex from 1.12.1 to 1.12.2
+
 ## [0.2.11](https://github.com/0xCCF4/PhotoSort/compare/v0.2.10...v0.2.11) - 2025-10-14
 
 ### Added
