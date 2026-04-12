@@ -7,14 +7,15 @@ use action::ActionMode;
 use anyhow::{anyhow, Result};
 use chrono::NaiveDateTime;
 use log::{debug, error, info, trace, warn};
+use regex::Regex;
 use std::cmp::Ordering;
 use std::ffi::OsStr;
-use std::fs;
 use std::fs::{DirEntry, File};
 use std::io::{Read, Seek};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::LazyLock;
+use std::{env, fs};
 
 pub mod action;
 pub mod analysis;
@@ -79,6 +80,8 @@ impl FromStr for AnalysisType {
 /// * `extensions` - A vector of strings that represent the file extensions to consider during analysis.
 /// * `action_type` - An `ActionMode` that specifies the type of action to perform on a file after analysis.
 /// * `mkdir` - A boolean that indicates whether to create the target directory if it does not exist.
+/// * `excluded_files` - A list of regexes to check if a file should be excluded from analysis.
+/// * `included_files` - A list of regexes to check if a file should be included in the analysis. If this list is not empty, only files matching at least one of the regexes will be included.
 #[derive(Debug, Clone)]
 pub struct AnalyzerSettings {
     pub analysis_type: AnalysisType,
@@ -96,6 +99,8 @@ pub struct AnalyzerSettings {
     pub video_extensions: Vec<String>,
     pub action_type: ActionMode,
     pub mkdir: bool,
+    pub excluded_files: Vec<Regex>,
+    pub included_files: Vec<Regex>,
 }
 
 static RE_DETECT_NAME_FORMAT_COMMAND: LazyLock<regex::Regex> = LazyLock::new(|| {
@@ -680,48 +685,79 @@ impl Analyzer {
         let valid_video = false;
         Ok(valid_photo || valid_video)
     }
+
+    /// Finds all files in a source directory and its subdirectories.
+    ///
+    /// # Arguments
+    /// * `directory` - The directory to search for files.
+    /// * `recursive` - A boolean that indicates whether to search subdirectories.
+    /// * `result` - A mutable reference to a vector of `PathBuf` objects that will hold the results.
+    ///
+    /// # Errors
+    /// This function will return an error if:
+    /// * The directory cannot be read or other IO errors occur.
+    pub fn find_files_in_source<P: AsRef<Path>>(
+        &self,
+        directory: P,
+        recursive: bool,
+        result: &mut Vec<PathBuf>,
+    ) -> Result<()> {
+        let mut entries = fs::read_dir(directory)?.collect::<Vec<std::io::Result<DirEntry>>>();
+        entries.sort_by(|a, b| match (a, b) {
+            (Ok(a), Ok(b)) => a.path().cmp(&b.path()),
+            (Err(_), Ok(_)) => Ordering::Less,
+            (Ok(_), Err(_)) => Ordering::Greater,
+            (Err(_), Err(_)) => Ordering::Equal,
+        });
+        let directory = env::current_dir()?.canonicalize()?;
+        for entry in entries {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                if recursive {
+                    debug!("Processing subfolder: {}", path.display());
+                    self.find_files_in_source(path, recursive, result)?;
+                }
+            } else {
+                let path = path.canonicalize()?;
+                let path_no_prefix = format!("/{}", path.strip_prefix(&directory)?.display());
+                trace!("Found file: {path_no_prefix}");
+
+                let mut include_it = self.settings.included_files.is_empty();
+                for include_pattern in &self.settings.included_files {
+                    let matching = include_pattern.is_match(path_no_prefix.as_str());
+                    trace!(
+                        " - Include pattern: {} {}",
+                        include_pattern.as_str(),
+                        if matching { "[INCLUDE]" } else { "" }
+                    );
+                    include_it = include_it || matching;
+                }
+
+                let mut exclude_it = false;
+                for exclude_pattern in &self.settings.excluded_files {
+                    let matching = exclude_pattern.is_match(path_no_prefix.as_str());
+                    trace!(
+                        " - Exclude pattern: {} {}",
+                        exclude_pattern.as_str(),
+                        if matching { "[EXCLUDE]" } else { "" }
+                    );
+                    exclude_it = exclude_it || matching;
+                }
+
+                if include_it && !exclude_it {
+                    trace!(" -> Included file: {path:?}");
+                    result.push(path);
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 mod exifutils;
 
 pub struct BracketEXIFInformation {
     pub index: u32,
-}
-
-/// Finds all files in a source directory and its subdirectories.
-///
-/// # Arguments
-/// * `directory` - The directory to search for files.
-/// * `recursive` - A boolean that indicates whether to search subdirectories.
-/// * `result` - A mutable reference to a vector of `PathBuf` objects that will hold the results.
-///
-/// # Errors
-/// This function will return an error if:
-/// * The directory cannot be read or other IO errors occur.
-pub fn find_files_in_source(
-    directory: PathBuf,
-    recursive: bool,
-    result: &mut Vec<PathBuf>,
-) -> Result<()> {
-    let mut entries = fs::read_dir(directory)?.collect::<Vec<std::io::Result<DirEntry>>>();
-    entries.sort_by(|a, b| match (a, b) {
-        (Ok(a), Ok(b)) => a.path().cmp(&b.path()),
-        (Err(_), Ok(_)) => Ordering::Less,
-        (Ok(_), Err(_)) => Ordering::Greater,
-        (Err(_), Err(_)) => Ordering::Equal,
-    });
-    for entry in entries {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_dir() {
-            if recursive {
-                debug!("Processing subfolder: {}", path.display());
-                find_files_in_source(path, recursive, result)?;
-            }
-        } else {
-            trace!("Found file: {}", path.display());
-            result.push(path);
-        }
-    }
-    Ok(())
 }

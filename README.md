@@ -129,6 +129,38 @@ Options:
                                        By using `--unknown others/{name}{.:ext}` all unknown files are moved to the subdirectory
                                        "others" relative to the target directory (specified by `--target-dir`)
                                        
+      --exclude <EXCLUDE_FILES>        Files to exclude completely from processing. Files matched by this pattern are never touched,
+                                       even by the `--unknown` argument. This option could be useful to exclude files like `Thumbs.db`
+                                       or `.DS_Store` from being moved to the `--unknown` folder. The `--exclude` option matches the
+                                       relative file path to the current working directory to the given string (prefixed by the os path separator).
+                                       `*` may be used to indicate any number of any characters, excluding path separators. `**` may
+                                       be used to indicate any number of any characters, including path separators. For example,
+                                       `--exclude /abc/*/test/**/Thumbs.db` would exclude any file named `Thumbs.db` in a
+                                       `abc/<subdir>/test/<any subdirs>/Thumbs.db` folder structure. On Windows use backslash
+                                       instead. The `--exclude` may be used multiple times to exclude multiple patterns. If any
+                                       pattern matches, the file is excluded. The `--exclude-regex` option works the same but
+                                       accepts a regular expression instead of literals with wildcards. By default, the pattern
+                                       matching is ignoring case. To enable case matching set `--exclude-case`
+
+      --exclude-regex <EXCLUDE_FILES_REGEX> Same as `--exclude` but accepts regular expressions instead of literals with wildcards.
+                                       `*` and `**` wildcards do not work in the regex patterns but are interpreted as regex match the
+                                       last pattern character 0 or more times. For a list of supported regex patterns,
+                                       see <https://docs.rs/regex/latest/regex/#syntax>
+
+      --exclude-case                   When set the exclude pattern to do not ignore upper/lower case
+
+      --include <INCLUDE_FILES>        When set to any, all files are by default ignored, only files matching any pattern provided via
+                                       `--include` or `--include-regex` argument are analysed. See `--exclude` for an explanation of
+                                       supported patterns. To enable case matching set `--include-case`. To specify regex patterns use
+                                       `--include-regex`. Note that `--exclude` will take priority over `--include`, meaning that a
+                                       file matching both an exclude and an include pattern will be excluded
+
+      --include_regex <INCLUDE_FILES_REGEX> Same as `--include` but accepts regular expressions instead of literals with wildcards. `*` and
+                                       `**` wildcards do not work in the regex patterns but are interpreted as regex match the last pattern
+                                       character 0 or more times. For a list of supported regex patterns, see <https://docs.rs/regex/latest/regex/#syntax>
+
+      --ignore-case                    When set the include pattern to do not ignore upper/lower case
+                                       
       --mkdir                          If the file format contains a "/", indicating that the file should be placed in a
                                        subdirectory, the mkdir flag controls if the tool is allowed to create non-existing subdirectories. No folder is
                                        created in dry-run mode
