@@ -159,7 +159,7 @@ Options:
                                        `**` wildcards do not work in the regex patterns but are interpreted as regex match the last pattern
                                        character 0 or more times. For a list of supported regex patterns, see <https://docs.rs/regex/latest/regex/#syntax>
 
-      --ignore-case                    When set the include pattern to do not ignore upper/lower case
+      --include-case                   When set the include pattern to do not ignore upper/lower case
                                        
       --mkdir                          If the file format contains a "/", indicating that the file should be placed in a
                                        subdirectory, the mkdir flag controls if the tool is allowed to create non-existing subdirectories. No folder is
