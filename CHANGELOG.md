@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0](https://github.com/0xCCF4/PhotoSort/compare/v0.2.12...v0.3.0) - 2026-04-12
+
+### Fixed
+
+- typo in cmdline args
+
+### Other
+
+- [**breaking**] add file include and exclude flags via regex and normal string
+- exclude arguments and help comment to main_impl
+
 ## [0.2.12](https://github.com/0xCCF4/PhotoSort/compare/v0.2.11...v0.2.12) - 2026-04-11
 
 ### Fixed
