@@ -7,7 +7,8 @@ use log::{debug, error, info, trace, LevelFilter};
 use photo_sort::analysis::bracketed::get_bracketing_info;
 use photo_sort::analysis::exif2date::ExifDateType;
 use photo_sort::analysis::name_formatters::BracketInfo;
-use photo_sort::{action, find_files_in_source, AnalysisType, Analyzer, BracketEXIFInformation};
+use photo_sort::{action, AnalysisType, Analyzer, BracketEXIFInformation};
+use regex::{Regex, RegexBuilder};
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -69,17 +70,33 @@ struct Arguments {
     unknown_file_format: Option<String>,
     /// Files to exclude completely from processing. Files matched by this pattern are never touched, even by the `--unknown` argument. This
     /// option could be useful to exclude files like `Thumbs.db` or `.DS_Store` from being moved to the `--unknown` folder. The `--exclude`
-    /// option matches the relative file path to the source directories to the given string. `*` may be used to indicate any number of any characters,
-    /// excluding path separators. `**` may be used to indicate any number of any characters, including path separators. For example, `--exclude abc/*/test/**/Thumbs.db`
-    /// would exclude any file named `Thumbs.db` in a `test/<subdir>/test/<any subdirs>/Thumbs.db` folder structure. The `--exclude` may be used multiple times
-    /// to exclude multiple patterns. If any pattern matches, the file is excluded. The `--exclude-regex` option works the same but accepts a regular
-    /// expression instead of literals with wildcards.
+    /// option matches the relative file path to the current working directory to the given string (prefixed by the os path separator). `*` may be used to indicate any number of any characters,
+    /// excluding path separators. `**` may be used to indicate any number of any characters, including path separators. For example, `--exclude /abc/*/test/**/Thumbs.db`
+    /// would exclude any file named `Thumbs.db` in a `abc/<subdir>/test/<any subdirs>/Thumbs.db` folder structure. On Windows use backslash instead.
+    /// The `--exclude` may be used multiple times to exclude multiple patterns. If any pattern matches, the file is excluded.
+    /// The `--exclude-regex` option works the same but accepts a regular expression instead of literals with wildcards.
+    /// By default, the pattern matching is ignoring case. To enable case matching set `--exclude-case`.
     #[arg(long = "exclude")]
     exclude_files: Vec<String>,
     /// Same as `--exclude` but accepts regular expressions instead of literals with wildcards. `*` and `**` wildcards do not work in the regex patterns but
     /// are interpreted as regex match the last pattern character 0 or more times. For a list of supported regex patterns, see <https://docs.rs/regex/latest/regex/#syntax>
     #[arg(long = "exclude-regex")]
     exclude_files_regex: Vec<String>,
+    /// When set the exclude pattern to do not ignore upper/lower case.
+    #[arg(long)]
+    exclude_case: bool,
+    /// When set to any, all files are by default ignored, only files matching any pattern provided via `--include` or `--include-regex` argument
+    /// are analysed. See `--exclude` for an explanation of supported patterns. To enable case matching set `--include-case`. To specify regex
+    /// patterns use `--include-regex`. Note that `--exclude` will take priority over `--include`, meaning that a file matching both an exclude and an include pattern will be excluded.
+    #[arg(long = "include")]
+    include_files: Vec<String>,
+    /// Same as `--include` but accepts regular expressions instead of literals with wildcards. `*` and `**` wildcards do not work in the regex patterns but
+    /// are interpreted as regex match the last pattern character 0 or more times. For a list of supported regex patterns, see <https://docs.rs/regex/latest/regex/#syntax>
+    #[arg(long = "include_regex")]
+    include_files_regex: Vec<String>,
+    /// When set the include pattern to do not ignore upper/lower case.
+    #[arg(long)]
+    ignore_case: bool,
     /// The target file format for files that can be identified as bracketed photo set with different exposure levels. By using `--bracket` all
     /// files identified as bracketed are moved/renamed/copied with the specified format string instead of the default one specified by `--target-dir`.
     /// The `--bracket` argument provides the following additional format specifiers:
@@ -220,6 +237,51 @@ fn setup_loggers<Q: AsRef<Path>>(
     Ok(())
 }
 
+fn parse_regex_patterns<
+    A: Iterator<Item = C>,
+    B: Iterator<Item = D>,
+    C: AsRef<str>,
+    D: AsRef<str>,
+>(
+    non_regex: A,
+    regex: B,
+    ignore_case: bool,
+    help_text: &str,
+) -> Vec<Regex> {
+    let files_regexes = non_regex.into_iter().map(|file_no_regex| {
+        let file_no_regex = file_no_regex.as_ref();
+        if file_no_regex.contains(format!("**{}**", std::path::MAIN_SEPARATOR_STR).as_str()) {
+            eprintln!("Error: Invalid {help_text} pattern {file_no_regex:?}: '**' is not allowed to follow consecutively after each other with a path separator in between");
+            std::process::exit(exitcode::CONFIG);
+        }
+        let escaped_sep = regex::escape(std::path::MAIN_SEPARATOR_STR);
+        format!("^{}$",
+                regex::escape(file_no_regex)
+                    .replace(format!("{escaped_sep}\\*\\*{escaped_sep}").as_str(), "/.*?")
+                    .replace(format!("{escaped_sep}\\*\\*").as_str(), "/.*?")
+                    .replace(format!("\\*\\*{escaped_sep}").as_str(), ".*?/")
+                    .replace("\\*\\*", ".*?")
+                    .replace("\\*", &format!("[^{escaped_sep}]*?")))
+    }).chain(regex.map(|x|x.as_ref().to_string())).map(|x| {
+        let x = x.as_ref();
+        trace!("Compiling include file regex {x:?}");
+        match RegexBuilder::new(x).case_insensitive(ignore_case).build() {
+            Ok(regex) => regex,
+            Err(err) => {
+                eprintln!("Failing to compile included files regular expression {x:?}: {err:?}");
+                std::process::exit(exitcode::CONFIG);
+            }
+        }
+    }).collect::<Vec<_>>();
+    if !files_regexes.is_empty() {
+        trace!("{help_text} files regexes:");
+        for regex in &files_regexes {
+            trace!(" - {}", regex.as_str());
+        }
+    }
+    files_regexes
+}
+
 #[allow(clippy::too_many_lines)]
 pub fn main() {
     let args = Arguments::parse();
@@ -236,7 +298,7 @@ pub fn main() {
         if args.quiet && args.logfile.is_none() {
             if args.debug || args.verbose {
                 eprintln!("Error: Cannot use --debug/--verbose with --quiet. Maybe you wanted to specify a --logfile to log the full output to, while suppressing the STDOUT/STDERR output?");
-                return;
+                std::process::exit(exitcode::CONFIG);
             }
 
             log_level = LevelFilter::Error;
@@ -261,12 +323,25 @@ pub fn main() {
         multi_clone,
     ) {
         eprintln!("Error starting application: {e:?}");
-        return;
+        std::process::exit(exitcode::CONFIG);
     }
 
     debug!("Initializing program");
 
     debug!("Video features enabled: {}", cfg!(feature = "video"));
+
+    let excluded_files_regexes = parse_regex_patterns(
+        args.exclude_files.into_iter(),
+        args.exclude_files_regex.into_iter(),
+        !args.exclude_case,
+        "exclude",
+    );
+    let included_files_regexes = parse_regex_patterns(
+        args.include_files.into_iter(),
+        args.include_files_regex.into_iter(),
+        !args.ignore_case,
+        "include",
+    );
 
     let bracket_mode = args.bracketed_file_format.is_some();
     let result = Analyzer::new(photo_sort::AnalyzerSettings {
@@ -289,6 +364,8 @@ pub fn main() {
         },
         #[cfg(feature = "video")]
         video_extensions: args.video_extensions.clone(),
+        excluded_files: excluded_files_regexes,
+        included_files: included_files_regexes,
     });
     let mut analyzer = match result {
         Ok(a) => {
@@ -297,7 +374,7 @@ pub fn main() {
         }
         Err(e) => {
             eprintln!("{e:?}");
-            return;
+            std::process::exit(exitcode::CONFIG);
         }
     };
 
@@ -321,7 +398,7 @@ pub fn main() {
 
     for source_dir in &analyzer.settings.source_dirs {
         info!("Processing source folder: {}", source_dir.display());
-        let result = find_files_in_source(
+        let result = analyzer.find_files_in_source(
             source_dir.clone(),
             analyzer.settings.recursive_source,
             &mut files,
@@ -376,7 +453,7 @@ pub fn main() {
                 Ok(is_video) => is_video,
                 Err(e) => {
                     eprintln!("The file {file:?} has an invalid file extension which can not be represented as a UTF-8 string. Error: {e}");
-                    return;
+                    std::process::exit(exitcode::IOERR);
                 }
             };
             if !photo_file {
@@ -481,6 +558,7 @@ pub fn main() {
     }
 
     debug!("Finished execution");
+    std::process::exit(exitcode::OK);
 }
 
 fn drain_bracketed_queue(
