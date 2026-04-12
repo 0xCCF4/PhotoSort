@@ -96,7 +96,7 @@ struct Arguments {
     include_files_regex: Vec<String>,
     /// When set the include pattern to do not ignore upper/lower case.
     #[arg(long)]
-    ignore_case: bool,
+    include_case: bool,
     /// The target file format for files that can be identified as bracketed photo set with different exposure levels. By using `--bracket` all
     /// files identified as bracketed are moved/renamed/copied with the specified format string instead of the default one specified by `--target-dir`.
     /// The `--bracket` argument provides the following additional format specifiers:
@@ -339,7 +339,7 @@ pub fn main() {
     let included_files_regexes = parse_regex_patterns(
         args.include_files.into_iter(),
         args.include_files_regex.into_iter(),
-        !args.ignore_case,
+        !args.include_case,
         "include",
     );
 
