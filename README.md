@@ -132,7 +132,7 @@ Options:
       --exclude <EXCLUDE_FILES>        Files to exclude completely from processing. Files matched by this pattern are never touched,
                                        even by the `--unknown` argument. This option could be useful to exclude files like `Thumbs.db`
                                        or `.DS_Store` from being moved to the `--unknown` folder. The `--exclude` option matches the
-                                       relative file path to the current working directory to the given string (prefixed by the os path separator).
+                                       relative file path to the respective source directory to the given string (prefixed by the os path separator).
                                        `*` may be used to indicate any number of any characters, excluding path separators. `**` may
                                        be used to indicate any number of any characters, including path separators. For example,
                                        `--exclude /abc/*/test/**/Thumbs.db` would exclude any file named `Thumbs.db` in a

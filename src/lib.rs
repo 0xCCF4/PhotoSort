@@ -10,12 +10,12 @@ use log::{debug, error, info, trace, warn};
 use regex::Regex;
 use std::cmp::Ordering;
 use std::ffi::OsStr;
+use std::fs;
 use std::fs::{DirEntry, File};
 use std::io::{Read, Seek};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::LazyLock;
-use std::{env, fs};
 
 pub mod action;
 pub mod analysis;
@@ -702,14 +702,15 @@ impl Analyzer {
         recursive: bool,
         result: &mut Vec<PathBuf>,
     ) -> Result<()> {
-        let mut entries = fs::read_dir(directory)?.collect::<Vec<std::io::Result<DirEntry>>>();
+        let mut entries =
+            fs::read_dir(directory.as_ref())?.collect::<Vec<std::io::Result<DirEntry>>>();
         entries.sort_by(|a, b| match (a, b) {
             (Ok(a), Ok(b)) => a.path().cmp(&b.path()),
             (Err(_), Ok(_)) => Ordering::Less,
             (Ok(_), Err(_)) => Ordering::Greater,
             (Err(_), Err(_)) => Ordering::Equal,
         });
-        let directory = env::current_dir()?.canonicalize()?;
+        let directory = directory.as_ref().canonicalize()?;
         for entry in entries {
             let entry = entry?;
             let path = entry.path();
@@ -720,7 +721,11 @@ impl Analyzer {
                 }
             } else {
                 let path = path.canonicalize()?;
-                let path_no_prefix = format!("/{}", path.strip_prefix(&directory)?.display());
+                let path_no_prefix = format!(
+                    "{}{}",
+                    std::path::MAIN_SEPARATOR_STR,
+                    path.strip_prefix(&directory).unwrap_or(&path).display()
+                );
                 trace!("Found file: {path_no_prefix}");
 
                 let mut include_it = self.settings.included_files.is_empty();
