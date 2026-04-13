@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1](https://github.com/0xCCF4/PhotoSort/compare/v0.3.0...v0.3.1) - 2026-04-13
+
+### Fixed
+
+- path prefix error on exclude/include files via --include --exclude
+
 ## [0.3.0](https://github.com/0xCCF4/PhotoSort/compare/v0.2.12...v0.3.0) - 2026-04-12
 
 ### Fixed
