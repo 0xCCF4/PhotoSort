@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2](https://github.com/0xCCF4/PhotoSort/compare/v0.3.1...v0.3.2) - 2026-04-19
+
+### Fixed
+
+- *(ci)* dependency issue, using newer cargo version on nix branch 24.11
+
+### Other
+
+- *(fix)* fix clippy warnings
+- --bracket-fmt option and measures for circumventing race condition on file naming
+
 ## [0.3.1](https://github.com/0xCCF4/PhotoSort/compare/v0.3.0...v0.3.1) - 2026-04-13
 
 ### Fixed
