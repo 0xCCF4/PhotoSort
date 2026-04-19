@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3](https://github.com/0xCCF4/PhotoSort/compare/v0.3.2...v0.3.3) - 2026-04-19
+
+### Other
+
+- manpage and shell completions generation feature
+
 ## [0.3.2](https://github.com/0xCCF4/PhotoSort/compare/v0.3.1...v0.3.2) - 2026-04-19
 
 ### Fixed
