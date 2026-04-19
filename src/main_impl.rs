@@ -1,6 +1,7 @@
 use crate::indicatif_log_bridge::LogWrapper;
 use chrono::Utc;
-use clap::Parser;
+use clap::{Command, CommandFactory, Parser};
+use clap_complete::{generate, Generator, Shell};
 use fern::colors::{Color, ColoredLevelConfig};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use log::{debug, error, info, trace, warn, LevelFilter};
@@ -10,7 +11,9 @@ use photo_sort::analysis::name_formatters::{BracketInfo, BracketingFormattingPri
 use photo_sort::{action, AnalysisType, Analyzer, BracketEXIFInformation};
 use regex::{Regex, RegexBuilder};
 use std::collections::VecDeque;
+use std::io;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 use threadpool::ThreadPool;
@@ -289,8 +292,57 @@ fn parse_regex_patterns<
     files_regexes
 }
 
+fn build_manpage(path: &Path) -> anyhow::Result<()> {
+    let man = clap_mangen::Man::new(Arguments::command());
+    let mut buffer: Vec<u8> = Vec::new();
+    man.render(&mut buffer)?;
+
+    std::fs::write(path.join("photo-sort.1"), buffer)?;
+
+    Ok(())
+}
+
+fn build_completions(shell: &str) -> anyhow::Result<()> {
+    fn print_completions<G: Generator>(generator: G, cmd: &mut Command) {
+        generate(
+            generator,
+            cmd,
+            cmd.get_name().to_string(),
+            &mut io::stdout(),
+        );
+    }
+
+    let generator = Shell::from_str(shell).map_err(|_| {
+        anyhow::anyhow!("The shell {shell} is not supported for completion generation")
+    })?;
+    let mut cmd = Arguments::command();
+    eprintln!("Generating completion file for {generator}...");
+    print_completions(generator, &mut cmd);
+
+    Ok(())
+}
+
 #[allow(clippy::too_many_lines)]
 pub fn main() {
+    let mut build_abort = false;
+    if let Ok(var) = std::env::var("BUILD_MANPAGE") {
+        if let Err(err) = build_manpage(&PathBuf::from(var)) {
+            eprintln!("Error building manpage: {err:?}");
+            std::process::exit(exitcode::IOERR);
+        }
+        build_abort = true;
+    }
+    if let Ok(var) = std::env::var("BUILD_SHELL") {
+        if let Err(err) = build_completions(var.as_str()) {
+            eprintln!("Error building shell completions: {err:?}");
+            std::process::exit(exitcode::IOERR);
+        }
+        build_abort = true;
+    }
+    if build_abort {
+        return;
+    }
+
     let args = Arguments::parse();
 
     let log_level_general = {
