@@ -19,6 +19,6 @@ impl NameFormatter for FormatName {
         _capture: regex::Captures<'_>,
         invocation_info: &NameFormatterInvocationInfo,
     ) -> Result<String> {
-        Ok(invocation_info.cleaned_name.to_string())
+        Ok(invocation_info.cleaned_name.clone())
     }
 }

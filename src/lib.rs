@@ -2,7 +2,9 @@
 #![allow(clippy::unnecessary_debug_formatting)]
 
 use crate::analysis::exif2date::ExifDateType;
-use crate::analysis::name_formatters::{BracketInfo, FileType, NameFormatterInvocationInfo};
+use crate::analysis::name_formatters::{
+    BracketInfo, BracketingFormattingPriority, FileType, NameFormatterInvocationInfo,
+};
 use action::ActionMode;
 use anyhow::{anyhow, Result};
 use chrono::NaiveDateTime;
@@ -82,6 +84,7 @@ impl FromStr for AnalysisType {
 /// * `mkdir` - A boolean that indicates whether to create the target directory if it does not exist.
 /// * `excluded_files` - A list of regexes to check if a file should be excluded from analysis.
 /// * `included_files` - A list of regexes to check if a file should be included in the analysis. If this list is not empty, only files matching at least one of the regexes will be included.
+/// * `bracketed_file_format` - Which data to select for formatting for non leaf path when the file is part of a bracketed set.
 #[derive(Debug, Clone)]
 pub struct AnalyzerSettings {
     pub analysis_type: AnalysisType,
@@ -94,6 +97,7 @@ pub struct AnalyzerSettings {
     pub unknown_file_format: Option<String>,
     pub bracketed_file_format: Option<String>,
     pub date_format: String,
+    pub bracketing_formatting: BracketingFormattingPriority,
     pub extensions: Vec<String>,
     #[cfg(feature = "video")]
     pub video_extensions: Vec<String>,
@@ -116,6 +120,9 @@ static RE_COMMAND_SPLIT: LazyLock<regex::Regex> = LazyLock::new(|| {
     )
     .expect("Failed to compile regex")
 });
+
+static LOCK_MOVE_OPERATION: LazyLock<std::sync::Mutex<()>> =
+    LazyLock::new(|| std::sync::Mutex::new(()));
 
 /// `Analyzer` is a struct that represents an analyzer for files.
 ///
@@ -461,16 +468,161 @@ impl Analyzer {
         bracket_info: &Option<BracketInfo>,
     ) -> Result<()> {
         let path = path.as_ref();
+
+        let mut data = match self.analyze_context(path) {
+            Ok(None) => return Ok(()), // skip file
+            Ok(Some(mut result)) => {
+                result.bracket_info = bracket_info.as_ref();
+                result
+            }
+            Err(err) => {
+                error!("Error analyzing file {}: {err}", path.display());
+                return Err(anyhow!("Error analyzing file: {err}"));
+            }
+        };
+
+        let new_file_path = |file_name_info: &NameFormatterInvocationInfo| -> Result<PathBuf> {
+            let format_string = if data.file_type == FileType::None {
+                self.settings
+                    .unknown_file_format
+                    .as_ref()
+                    .ok_or(anyhow!("No unknown format string specified"))?
+                    .as_str()
+            } else if let (Some(bracket_info), Some(_)) =
+                (&self.settings.bracketed_file_format, &bracket_info)
+            {
+                bracket_info.as_str()
+            } else if data.date.is_some() {
+                self.settings.file_format.as_str()
+            } else {
+                self.settings.nodate_file_format.as_str()
+            };
+
+            let path_split: Vec<_> = format_string.split('/').collect();
+            let len = path_split.len();
+            let path_split: Vec<_> = path_split
+                .into_iter()
+                .enumerate()
+                .map(|(index, component)| {
+                    let is_leaf = index == len - 1;
+                    let bracketing_info = file_name_info.bracket_info;
+
+                    if let Some(bracketing_info) = bracketing_info {
+                        if is_leaf {
+                            self.replace_filepath_parts(component, file_name_info)
+                        } else {
+                            match self.settings.bracketing_formatting {
+                                BracketingFormattingPriority::First => {
+                                    if let Some(bracketed_format) = &bracketing_info.analysis_first
+                                    {
+                                        let mut bracketed_format =
+                                            bracketed_format.as_ref().clone();
+                                        bracketed_format.bracket_info = Some(bracketing_info);
+                                        self.replace_filepath_parts(component, &bracketed_format)
+                                    } else {
+                                        self.replace_filepath_parts(component, file_name_info)
+                                    }
+                                }
+                                BracketingFormattingPriority::Last => {
+                                    if let Some(bracketed_format) = &bracketing_info.analysis_last {
+                                        let mut bracketed_format =
+                                            bracketed_format.as_ref().clone();
+                                        bracketed_format.bracket_info = Some(bracketing_info);
+                                        self.replace_filepath_parts(component, &bracketed_format)
+                                    } else {
+                                        self.replace_filepath_parts(component, file_name_info)
+                                    }
+                                }
+                                BracketingFormattingPriority::Current => {
+                                    self.replace_filepath_parts(component, file_name_info)
+                                }
+                            }
+                        }
+                    } else {
+                        self.replace_filepath_parts(component, file_name_info)
+                    }
+                })
+                .collect();
+
+            for entry in &path_split {
+                if let Err(err) = entry {
+                    return Err(anyhow!("Failed to format filename: {err}"));
+                }
+            }
+            let path_split = path_split.into_iter().map(Result::unwrap);
+
+            let mut target_path = self.settings.target_dir.clone();
+            for path_component in path_split {
+                let component = path_component.replace(['/', '\\'], "");
+                if component != ".." {
+                    target_path.push(component);
+                }
+            }
+            Ok(target_path)
+        };
+
+        let mut new_path = new_file_path(&data)?;
+        let mut dup_counter = 0;
+
+        let lock_rename = match LOCK_MOVE_OPERATION.lock() {
+            Ok(guard) => Some(guard),
+            Err(err) => {
+                warn!("Failed to acquire lock for move operation: {err}");
+                None
+            }
+        };
+
+        while new_path.exists() {
+            debug!("Target file already exists: {}", new_path.display());
+            dup_counter += 1;
+            data.duplicate_counter = Some(dup_counter);
+            new_path = new_file_path(&data)?;
+        }
+
+        if dup_counter > 0 {
+            info!("De-duplicated target file: {}", new_path.display());
+        }
+
+        action::file_action(
+            path,
+            &new_path,
+            &self.settings.action_type,
+            self.settings.mkdir,
+            lock_rename,
+        )?;
+        Ok(())
+    }
+
+    /// Analyzes a file and returns the analysis context, which includes the file path, whether it's an unknown file, the extracted date, and the information for name formatting.
+    ///
+    /// # Arguments
+    /// * `path` - A `PathBuf` that represents the path of the file to analyze.
+    ///
+    /// # Returns
+    /// * `Some<(bool, NameFormatterInvocationInfo)>` - true=unknown file, false=known file, and the information for name formatting if the analysis was successful.
+    /// * `None` - If the file should be skipped (e.g., due to invalid extension and no unknown format specified).
+    ///
+    /// # Errors
+    /// This function will return an error if:
+    /// * The file name cannot be retrieved or is invalid.
+    /// * The file cannot be opened.
+    /// * An error occurs during the analysis of the file's Exif data or name.
+    pub fn analyze_context<P: AsRef<Path>>(
+        &self,
+        path: P,
+    ) -> Result<Option<NameFormatterInvocationInfo<'static>>> {
+        let path = path.as_ref();
         let valid_ext = self.is_valid_extension(path.extension());
         let is_unknown_file = match valid_ext {
             Ok(false) => {
                 if self.settings.unknown_file_format.is_none() {
                     info!(
-                        "Skipping file because extension is not in the list: {}",
+                        "Skipping file because extension is not in the list and no unknown format specified: {}",
                         path.display()
                     );
-                    return Ok(());
+                    return Ok(None);
                 }
+
                 debug!("Processing unknown file: {}", path.display());
                 true
             }
@@ -480,7 +632,7 @@ impl Analyzer {
             }
             Err(err) => {
                 warn!("Error checking file extension: {err}");
-                return Ok(());
+                return Ok(None);
             }
         };
 
@@ -524,17 +676,18 @@ impl Analyzer {
             ftype = FileType::Video;
         }
 
-        let mut file_name_info = NameFormatterInvocationInfo {
-            date: &date,
-            date_string: &date_string,
-            date_default_format: &self.settings.date_format,
-            file_type: &ftype,
-            cleaned_name: &cleaned_name,
+        let file_name_info = NameFormatterInvocationInfo {
+            date,
+            date_string,
+            date_default_format: self.settings.date_format.clone(),
+            bracketing_formatting: self.settings.bracketing_formatting,
+            file_type: ftype,
+            cleaned_name,
             duplicate_counter: None,
             extension: path
                 .extension()
                 .map_or(String::new(), |ext| ext.to_string_lossy().to_string()),
-            bracket_info: bracket_info.as_ref(),
+            bracket_info: None,
             original_name: path
                 .with_extension("")
                 .file_name()
@@ -547,66 +700,7 @@ impl Analyzer {
                 .to_string_lossy()
                 .to_string(),
         };
-
-        let new_file_path = |file_name_info: &NameFormatterInvocationInfo| -> Result<PathBuf> {
-            let format_string = if is_unknown_file {
-                self.settings
-                    .unknown_file_format
-                    .as_ref()
-                    .ok_or(anyhow!("No unknown format string specified"))?
-                    .as_str()
-            } else if let (Some(bracket_info), Some(_)) =
-                (&self.settings.bracketed_file_format, &bracket_info)
-            {
-                bracket_info.as_str()
-            } else if date.is_some() {
-                self.settings.file_format.as_str()
-            } else {
-                self.settings.nodate_file_format.as_str()
-            };
-
-            let path_split: Vec<_> = format_string
-                .split('/')
-                .map(|component| self.replace_filepath_parts(component, file_name_info))
-                .collect();
-            for entry in &path_split {
-                if let Err(err) = entry {
-                    return Err(anyhow!("Failed to format filename: {err}"));
-                }
-            }
-            let path_split = path_split.into_iter().map(Result::unwrap);
-
-            let mut target_path = self.settings.target_dir.clone();
-            for path_component in path_split {
-                let component = path_component.replace(['/', '\\'], "");
-                if component != ".." {
-                    target_path.push(component);
-                }
-            }
-            Ok(target_path)
-        };
-
-        let mut new_path = new_file_path(&file_name_info)?;
-        let mut dup_counter = 0;
-
-        while new_path.exists() {
-            debug!("Target file already exists: {}", new_path.display());
-            dup_counter += 1;
-            file_name_info.duplicate_counter = Some(dup_counter);
-            new_path = new_file_path(&file_name_info)?;
-        }
-
-        if dup_counter > 0 {
-            info!("De-duplicated target file: {}", new_path.display());
-        }
-
-        action::file_action(
-            path,
-            &new_path,
-            &self.settings.action_type,
-            self.settings.mkdir,
-        )?;
-        Ok(())
+        Ok(Some(file_name_info))
     }
 
     /// Checks if a file has a valid photo extension.

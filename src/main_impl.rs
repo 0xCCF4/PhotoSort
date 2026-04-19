@@ -3,10 +3,10 @@ use chrono::Utc;
 use clap::Parser;
 use fern::colors::{Color, ColoredLevelConfig};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use log::{debug, error, info, trace, LevelFilter};
+use log::{debug, error, info, trace, warn, LevelFilter};
 use photo_sort::analysis::bracketed::get_bracketing_info;
 use photo_sort::analysis::exif2date::ExifDateType;
-use photo_sort::analysis::name_formatters::BracketInfo;
+use photo_sort::analysis::name_formatters::{BracketInfo, BracketingFormattingPriority};
 use photo_sort::{action, AnalysisType, Analyzer, BracketEXIFInformation};
 use regex::{Regex, RegexBuilder};
 use std::collections::VecDeque;
@@ -110,6 +110,13 @@ struct Arguments {
     /// Currently only works for Sony's cameras. Feel free to open an issue requesting support for other vendors at <https://github.com/0xCCF4/PhotoSort/issues>.
     #[arg(long = "bracket", alias = "bracketed")]
     bracketed_file_format: Option<String>,
+    /// When using the `--bracket` option, this flag controls which e.g. date information is used for the file name formatting of intermediary directories.
+    /// For example, with `{date}/{date}-{name}.{ext}` as `--bracket` format files of the same bracket group will be placed into different subdirectories
+    /// when the date changes between shots, if using the respective date information of each file (`current` mode). Using the `first`/`last` mode
+    /// changes the data source for intermediary directory formatting (except final file name) to use the date information of the first respective
+    /// last image in the bracketing sequence, hence keeping files of the same bracket group together in the same subdirectory.
+    #[arg(long = "bracket-fmt", default_value = "first")]
+    bracketing_formatting_priority: BracketingFormattingPriority,
     /// If the file format contains a "/", indicating that the file should be placed in a subdirectory,
     /// the mkdir flag controls if the tool is allowed to create non-existing subdirectories. No folder is created in dry-run mode.
     #[arg(long, default_value = "false", alias = "mkdirs")]
@@ -366,6 +373,7 @@ pub fn main() {
         video_extensions: args.video_extensions.clone(),
         excluded_files: excluded_files_regexes,
         included_files: included_files_regexes,
+        bracketing_formatting: args.bracketing_formatting_priority,
     });
     let mut analyzer = match result {
         Ok(a) => {
@@ -409,6 +417,8 @@ pub fn main() {
     }
 
     debug!("Found {} files in source folders", files.len());
+    files.sort();
+    trace!("Sorting finished.");
 
     let threadpool = args.threads.map(|v| v.max(1)).map(ThreadPool::new);
     let (sender, receiver) = channel();
@@ -439,6 +449,7 @@ pub fn main() {
     });
 
     let mut bracketed_queue = VecDeque::<(PathBuf, BracketEXIFInformation)>::new();
+    let mut bracket_indices_used = std::collections::HashSet::new();
     let mut bracket_group_index = 1;
 
     let file_count = files.len();
@@ -467,15 +478,16 @@ pub fn main() {
                 .map(Option::flatten)
             {
                 Ok(Some(info)) => {
+                    trace!("File {file:?} is detected as a bracketed photo with index {} in its sequence", info.index);
                     let drain = if let Some(last) = bracketed_queue.back() {
                         if last.0.parent() != file.parent() {
                             trace!("Detected end of bracket sequence: parent path mismatch");
                             true
-                        } else if last.1.index + 1 != info.index {
+                        } else if bracket_indices_used.contains(&info.index) {
                             trace!(
-                                "Detected end of bracket sequence: index mismatch {} -> {}",
-                                last.1.index,
-                                info.index
+                                "Detected end of bracket sequence: index already seen {} ({:?})",
+                                info.index,
+                                bracket_indices_used
                             );
                             true
                         } else {
@@ -487,6 +499,7 @@ pub fn main() {
                     if drain {
                         drain_bracketed_queue(
                             &mut bracketed_queue,
+                            &mut bracket_indices_used,
                             &context,
                             bar.as_ref(),
                             i,
@@ -494,6 +507,7 @@ pub fn main() {
                         );
                     }
 
+                    bracket_indices_used.insert(info.index);
                     bracketed_queue.push_back((file, info));
                 }
                 Ok(None) => {
@@ -501,6 +515,7 @@ pub fn main() {
                         trace!("Detected end of bracket sequence: non-bracketed file");
                         drain_bracketed_queue(
                             &mut bracketed_queue,
+                            &mut bracket_indices_used,
                             &context,
                             bar.as_ref(),
                             i,
@@ -529,6 +544,7 @@ pub fn main() {
         trace!("Detected end of bracket sequence: processing end");
         drain_bracketed_queue(
             &mut bracketed_queue,
+            &mut bracket_indices_used,
             &context,
             bar.as_ref(),
             file_count,
@@ -561,20 +577,57 @@ pub fn main() {
     std::process::exit(exitcode::OK);
 }
 
+#[allow(clippy::similar_names)]
 fn drain_bracketed_queue(
     queue: &mut VecDeque<(PathBuf, BracketEXIFInformation)>,
+    index_list: &mut std::collections::HashSet<u32>,
     context: &ExecutionContext,
     bar: Option<&ProgressBar>,
     target_progress: usize,
     group_index: &mut usize,
 ) {
+    let analyzer = match context {
+        ExecutionContext::SingleThreaded(context) => &context.analyzer,
+        ExecutionContext::MultiThreaded(context) => &context.analyzer,
+    };
+
+    index_list.clear();
     if queue.is_empty() {
         return;
     }
 
-    let first = queue.front().unwrap();
-    let last = queue.back().unwrap();
-    let sequence_length = queue.len();
+    let mut list = Vec::with_capacity(queue.len());
+    while let Some((file, info)) = queue.pop_front() {
+        list.push((file, info));
+    }
+    list.sort_by(|a, b| a.1.index.cmp(&b.1.index));
+
+    let first = list.first().unwrap();
+    let last = list.last().unwrap();
+    let sequence_length = list.len();
+
+    let analysis_first = match analyzer.analyze_context(&first.0) {
+        Ok(Some(analysis)) => Some(Arc::new(analysis)),
+        Ok(None) => None,
+        Err(err) => {
+            warn!(
+                "Error analyzing first file of bracketing sequence {}: {err}",
+                last.0.display()
+            );
+            None
+        }
+    };
+    let analysis_last = match analyzer.analyze_context(&last.0) {
+        Ok(Some(analysis)) => Some(Arc::new(analysis)),
+        Ok(None) => None,
+        Err(err) => {
+            warn!(
+                "Error analyzing last file of bracketing sequence {}: {err}",
+                last.0.display()
+            );
+            None
+        }
+    };
 
     let info = BracketInfo {
         first: first.0.clone(),
@@ -582,20 +635,20 @@ fn drain_bracketed_queue(
         sequence_number: 0,
         sequence_length,
         group_index: *group_index,
+        analysis_first,
+        analysis_last,
     };
     *group_index += 1;
 
-    for (i, file) in queue.iter().enumerate() {
+    for (i, file) in list.iter().enumerate() {
         let mut info = info.clone();
         info.sequence_number = file.1.index;
         process_file(file.0.clone(), context, Some(info));
 
         if let Some(bar) = bar {
-            bar.set_position(target_progress.saturating_sub(queue.len() - 1 - i) as u64);
+            bar.set_position(target_progress.saturating_sub(list.len() - 1 - i) as u64);
         }
     }
-
-    queue.clear();
 }
 
 struct ThreadPoolContext {
@@ -624,7 +677,11 @@ impl ExecutionContext {
     }
 }
 
-fn process_file(file: PathBuf, context: &ExecutionContext, bracket_info: Option<BracketInfo>) {
+fn process_file(
+    file: PathBuf,
+    context: &ExecutionContext,
+    bracket_info: Option<BracketInfo<'static>>,
+) {
     match context {
         ExecutionContext::SingleThreaded(context) => {
             let result = context.analyzer.run_file(&file, &bracket_info);
