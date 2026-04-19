@@ -600,7 +600,7 @@ fn drain_bracketed_queue(
     while let Some((file, info)) = queue.pop_front() {
         list.push((file, info));
     }
-    list.sort_by(|a, b| a.1.index.cmp(&b.1.index));
+    list.sort_by_key(|a| a.1.index);
 
     let first = list.first().unwrap();
     let last = list.last().unwrap();
