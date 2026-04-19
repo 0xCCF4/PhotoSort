@@ -5,6 +5,7 @@ use std::fmt::{Display, Formatter};
 use std::fs;
 use std::path::Path;
 use std::str::FromStr;
+use std::sync::MutexGuard;
 
 /// `ActualAction` is an enumeration that defines the different types of actions that can be performed on a file.
 ///
@@ -81,6 +82,7 @@ impl FromStr for ActualAction {
 /// * `target` - A `PathBuf` reference to the target file.
 /// * `action` - An `ActionMode` reference specifying the action to be performed.
 /// * `mkdir` - Mkdir subfolders on the way, in dry-run mode no subfolders are created.
+/// * `guard` - A `MutexGuard` to ensure that the file operations are thread-safe.
 ///
 /// # Returns
 ///
@@ -107,6 +109,7 @@ pub fn file_action<P: AsRef<Path>, Q: AsRef<Path>>(
     target: Q,
     action: &ActionMode,
     mkdir: bool,
+    guard: Option<MutexGuard<()>>,
 ) -> Result<()> {
     let source = source.as_ref();
     let target = target.as_ref();
@@ -134,9 +137,9 @@ pub fn file_action<P: AsRef<Path>, Q: AsRef<Path>>(
     }
 
     let result = match action {
-        ActionMode::Execute(ActualAction::Move) => move_file(source, target),
-        ActionMode::Execute(ActualAction::Copy) => copy_file(source, target),
-        ActionMode::Execute(ActualAction::Hardlink) => hardlink_file(source, target),
+        ActionMode::Execute(ActualAction::Move) => move_file(source, target, guard),
+        ActionMode::Execute(ActualAction::Copy) => copy_file(source, target, guard),
+        ActionMode::Execute(ActualAction::Hardlink) => hardlink_file(source, target, guard),
         ActionMode::Execute(ActualAction::RelativeSymlink) => relative_symlink_file(source, target),
         ActionMode::Execute(ActualAction::AbsoluteSymlink) => absolute_symlink_file(source, target),
         ActionMode::DryRun(action) => {
@@ -171,11 +174,18 @@ fn error_file_exists(target: &Path) -> std::io::Result<()> {
     }
 }
 
-fn copy_file<A: AsRef<Path>, B: AsRef<Path>>(source: A, target: B) -> std::io::Result<()> {
+fn copy_file<A: AsRef<Path>, B: AsRef<Path>>(
+    source: A,
+    target: B,
+    guard: Option<MutexGuard<()>>,
+) -> std::io::Result<()> {
     let source = source.as_ref();
     let target = target.as_ref();
 
     debug!("Copying {} -> {}", source.display(), target.display());
+
+    fs::write(target, [])?; // create empty file to prevent race conditions with other threads
+    drop(guard); // release the lock before copying the file
 
     let metadata = fs::metadata(source)?;
     let result = fs::copy(source, target)?;
@@ -193,7 +203,11 @@ fn copy_file<A: AsRef<Path>, B: AsRef<Path>>(source: A, target: B) -> std::io::R
     Ok(())
 }
 
-fn move_file<A: AsRef<Path>, B: AsRef<Path>>(source: A, target: B) -> std::io::Result<()> {
+fn move_file<A: AsRef<Path>, B: AsRef<Path>>(
+    source: A,
+    target: B,
+    guard: Option<MutexGuard<()>>,
+) -> std::io::Result<()> {
     let source = source.as_ref();
     let target = target.as_ref();
 
@@ -207,14 +221,18 @@ fn move_file<A: AsRef<Path>, B: AsRef<Path>>(source: A, target: B) -> std::io::R
             source.display(),
             target.display()
         );
-        copy_file(source, target)?;
+        copy_file(source, target, guard)?;
         fs::remove_file(source)
     } else {
         Ok(())
     }
 }
 
-fn hardlink_file<A: AsRef<Path>, B: AsRef<Path>>(source: A, target: B) -> std::io::Result<()> {
+fn hardlink_file<A: AsRef<Path>, B: AsRef<Path>>(
+    source: A,
+    target: B,
+    guard: Option<MutexGuard<()>>,
+) -> std::io::Result<()> {
     let source = source.as_ref();
     let target = target.as_ref();
 
@@ -232,7 +250,7 @@ fn hardlink_file<A: AsRef<Path>, B: AsRef<Path>>(source: A, target: B) -> std::i
             source.display(),
             target.display()
         );
-        copy_file(source, target)
+        copy_file(source, target, guard)
     } else {
         Ok(())
     }

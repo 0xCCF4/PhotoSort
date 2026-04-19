@@ -21,7 +21,7 @@ impl NameFormatter for FormatDate {
     ) -> Result<String> {
         let format_string = capture
             .get(3)
-            .map_or(invocation_info.date_default_format, |m| m.as_str());
+            .map_or(invocation_info.date_default_format.as_str(), |m| m.as_str());
         Ok(invocation_info.date.map_or("NODATE".to_string(), |x| {
             x.format(format_string).to_string()
         }))

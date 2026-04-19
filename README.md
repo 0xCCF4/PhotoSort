@@ -22,6 +22,10 @@ The documentation can be found here: <https://docs.rs/photo_sort>
 - **Dry Run Mode**: Test the tool without making any changes to your files. The tool will print the actions it would
   take without actually executing them.
 - **Sort photos and videos**: `PhotoSort` can sort both photos and videos by their metadata.
+- **Bracketing Support**: `PhotoSort` can detect bracketed photo sets with different exposure levels and sort them together.
+- **File Inclusion/Exclusion**: You can specify which files to include or exclude from processing based on patterns or regular expressions.
+- **Multi-threading**: `PhotoSort` can utilize multiple threads to speed up file I/O operations.
+- **Progress Bar**: Display a progress bar while processing files to keep track of the sorting progress.
 
 ## Usage
 
@@ -116,6 +120,17 @@ Options:
                                        requires each file to be analyzed using the EXIF analyzer, even if the Analysis type
                                        is set to Name-only. Currently only works for Sony's cameras. Feel free to open an
                                        issue requesting support for other vendors at https://github.com/0xCCF4/PhotoSort/issues
+                                       
+       --bracket-fmt <BRACKETING_FORMATTING_PRIORITY> When using the `--bracket` option, this flag controls which e.g. date information
+                                       is used for the file name formatting of intermediary directories. For example, with
+                                       `{date}/{date}-{name}.{ext}` as `--bracket` format files of the same bracket group
+                                       will be placed into different subdirectories when the date changes between shots, if
+                                       using the respective date information of each file (`current` mode). Using the `first`/`last`
+                                       mode changes the data source for intermediary directory formatting (except final file name)
+                                       to use the date information of the first respective last image in the bracketing sequence,
+                                       hence keeping files of the same bracket group together in the same subdirectory.
+          
+          [default: first]
 
                                        
       --nodate <NODATE_FILE_FORMAT>    The target format for files that have no date. The `analysis_mode` allows specifying
