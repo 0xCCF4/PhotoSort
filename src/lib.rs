@@ -1,6 +1,7 @@
 #![doc = include_str!("../README.md")]
 #![allow(clippy::unnecessary_debug_formatting)]
 
+use crate::action::ActualAction;
 use crate::analysis::exif2date::ExifDateType;
 use crate::analysis::name_formatters::{
     BracketInfo, BracketingFormattingPriority, FileType, NameFormatterInvocationInfo,
@@ -14,7 +15,7 @@ use std::cmp::Ordering;
 use std::ffi::OsStr;
 use std::fs;
 use std::fs::{DirEntry, File};
-use std::io::{Read, Seek};
+use std::io::{BufReader, Read, Seek};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::LazyLock;
@@ -574,9 +575,63 @@ impl Analyzer {
 
         while new_path.exists() {
             debug!("Target file already exists: {}", new_path.display());
+
+            let source_file_stream = std::fs::File::open(&new_path).map_err(|err| {
+                anyhow!(
+                    "Failed to open source file for de-duplication check: {}: {err}",
+                    new_path.display()
+                )
+            })?;
+            match std::fs::File::open(path) {
+                Ok(target_file_stream) => {
+                    // now compare file contents
+
+                    match streams_equal(source_file_stream, target_file_stream) {
+                        Err(err) => {
+                            error!(
+                                "Failed to compare files: {} {} -> {}.",
+                                path.display(),
+                                new_path.display(),
+                                err
+                            );
+                        }
+                        Ok(true) => {
+                            // source = target
+
+                            drop(lock_rename);
+
+                            debug!("De-duplicating file {} because it is identical to the target file {}.", path.display(), new_path.display());
+
+                            return match self.settings.action_type {
+                                ActionMode::Execute(ActualAction::Move) => fs::remove_file(path).map_err(|err| anyhow!("Failed to remove source file during de-duplication: {}: {err}", path.display())),
+                                ActionMode::Execute(ActualAction::Copy | ActualAction::Hardlink | ActualAction::RelativeSymlink | ActualAction::AbsoluteSymlink) => Ok(()),
+                                ActionMode::DryRun(_action) => {
+                                    Ok(())
+                                }
+                            };
+                        }
+                        Ok(false) => {
+                            // source != target
+                        }
+                    }
+                }
+                Err(err) => {
+                    warn!(
+                        "Failed to open target file for de-duplication check: {}: {err}",
+                        path.display()
+                    );
+                }
+            }
+
             dup_counter += 1;
             data.duplicate_counter = Some(dup_counter);
-            new_path = new_file_path(&data)?;
+            let new_path_candidate = new_file_path(&data)?;
+
+            if new_path_candidate == new_path {
+                return Err(anyhow!("Target file {} already exists; content differs. Consider providing the {{:dup}} format specifier to the format string to resolve duplicate naming.", new_path.display()));
+            }
+
+            new_path = new_path_candidate;
         }
 
         if dup_counter > 0 {
@@ -859,4 +914,29 @@ mod exifutils;
 
 pub struct BracketEXIFInformation {
     pub index: u32,
+}
+
+fn streams_equal<R1: Read, R2: Read>(a: R1, b: R2) -> std::io::Result<bool> {
+    let mut a = BufReader::new(a);
+    let mut b = BufReader::new(b);
+
+    let mut buf_a = [0u8; 8192];
+    let mut buf_b = [0u8; 8192];
+
+    loop {
+        let read_a = a.read(&mut buf_a)?;
+        let read_b = b.read(&mut buf_b)?;
+
+        if read_a != read_b {
+            return Ok(false);
+        }
+
+        if read_a == 0 {
+            return Ok(true);
+        }
+
+        if buf_a[..read_a] != buf_b[..read_b] {
+            return Ok(false);
+        }
+    }
 }
