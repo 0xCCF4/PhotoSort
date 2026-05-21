@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.4](https://github.com/0xCCF4/PhotoSort/compare/v0.3.3...v0.3.4) - 2026-05-21
+
+### Fixed
+
+- #195 target file already exists caused infinite loop
+
+### Other
+
+- *(deps)* bump actions-rust-lang/setup-rust-toolchain
+- *(deps)* bump filetime from 0.2.28 to 0.2.29
+- Merge pull request #192 from 0xCCF4/dependabot/cargo/clap_complete-4.6.5
+- *(deps)* bump clap_complete from 4.6.2 to 4.6.5
+- *(deps)* bump clap from 4.6.0 to 4.6.1
+- *(deps)* bump dependabot/fetch-metadata from 3.0.0 to 3.1.0
+
 ## [0.3.3](https://github.com/0xCCF4/PhotoSort/compare/v0.3.2...v0.3.3) - 2026-04-19
 
 ### Other
