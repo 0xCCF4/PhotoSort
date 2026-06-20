@@ -32,7 +32,9 @@ jobs:
           override: true
 
       - name: Install ffmepg dependencies
-        run: sudo apt install -y clang libavcodec-dev libavformat-dev libavutil-dev pkg-config ffmpeg libavutil-dev libavfilter-dev libavdevice-dev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libavcodec-dev libavformat-dev libavutil-dev pkg-config ffmpeg libavfilter-dev libavdevice-dev
 
       - name: Install
         uses: actions-rs/cargo@v1
