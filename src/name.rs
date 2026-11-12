@@ -2,14 +2,36 @@ use log::trace;
 use regex::Regex;
 use std::sync::LazyLock;
 
-/// Matches image names with optional prefixes and suffixes.
+/// Matches image names with optional trailing separators, ending with a file extension.
 ///
-/// This regex matches image names that optionally start with `IMG`, `img`, `NO_DATE`, or `no_date`, `VID`, `vid`, `MOV`, `mov`,
-/// followed by any characters, and ending with a file extension.
+/// The first group contains the name without trailing `-`/`_` characters and without extension.
 static RE_IMAGE_NAME: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^((MOV|VID|mov|vid|IMG|img|NO_?DATE|no_?date)?[-_]*)*(.*?)[-_]*?\.([A-Za-z0-9]+)$")
-        .expect("Failed to compile regex")
+    Regex::new(r"^(.*?)[-_]*?\.([A-Za-z0-9]+)$").expect("Failed to compile regex")
 });
+
+/// Prefixes that are removed from the start of an image name.
+const NAME_PREFIXES: [&str; 12] = [
+    "MOV", "VID", "mov", "vid", "IMG", "img", "NO_DATE", "NODATE", "no_date", "nodate", "-", "_",
+];
+
+/// Removes all leading prefixes (`IMG`, `VID`, `MOV`, `NO_DATE`, ...) and separators from a name.
+///
+/// A prefix is only removed if it is not directly followed by a letter. Otherwise it is the
+/// beginning of a word, for example `movie`, `video` or `IMGP1234`, and not a prefix.
+fn strip_name_prefixes(mut name: &str) -> &str {
+    'outer: loop {
+        for prefix in NAME_PREFIXES {
+            if let Some(rest) = name.strip_prefix(prefix) {
+                let is_separator = prefix == "-" || prefix == "_";
+                if is_separator || !rest.chars().next().is_some_and(char::is_alphabetic) {
+                    name = rest;
+                    continue 'outer;
+                }
+            }
+        }
+        return name;
+    }
+}
 
 /// Matches and removes file extensions.
 ///
@@ -38,8 +60,10 @@ pub fn clean_image_name(name: &str) -> String {
     let result = match caps {
         None => RE_REMOVE_EXT.replace(name, "").to_string(),
         Some(caps) => {
-            if let (Some(cap_name), Some(_cap_ext)) = (caps.get(3), caps.get(4)) {
-                RE_REMOVE_NODATE.replace(cap_name.as_str(), "").to_string()
+            if let (Some(cap_name), Some(_cap_ext)) = (caps.get(1), caps.get(2)) {
+                RE_REMOVE_NODATE
+                    .replace(strip_name_prefixes(cap_name.as_str()), "")
+                    .to_string()
             } else {
                 RE_REMOVE_NODATE
                     .replace(RE_REMOVE_EXT.replace(name, "").as_ref(), "")
