@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.5](https://github.com/0xCCF4/PhotoSort/compare/v0.3.4...v0.3.5) - 2026-06-20
+
+### Other
+
+- *(deps)* bump regex from 1.12.3 to 1.12.4 ([#203](https://github.com/0xCCF4/PhotoSort/pull/203))
+- Stabilize video-feature CI install step on ubuntu-latest ([#204](https://github.com/0xCCF4/PhotoSort/pull/204))
+- Merge pull request #202 from 0xCCF4/dependabot/cargo/log-0.4.32
+- *(deps)* bump log from 0.4.31 to 0.4.32
+- *(deps)* bump log from 0.4.30 to 0.4.31
+- *(deps)* bump log from 0.4.29 to 0.4.30
+
 ## [0.3.4](https://github.com/0xCCF4/PhotoSort/compare/v0.3.3...v0.3.4) - 2026-05-21
 
 ### Fixed
