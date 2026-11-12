@@ -170,7 +170,7 @@ Options:
                                        `--include-regex`. Note that `--exclude` will take priority over `--include`, meaning that a
                                        file matching both an exclude and an include pattern will be excluded
 
-      --include_regex <INCLUDE_FILES_REGEX> Same as `--include` but accepts regular expressions instead of literals with wildcards. `*` and
+      --include-regex <INCLUDE_FILES_REGEX> Same as `--include` but accepts regular expressions instead of literals with wildcards. `*` and
                                        `**` wildcards do not work in the regex patterns but are interpreted as regex match the last pattern
                                        character 0 or more times. For a list of supported regex patterns, see <https://docs.rs/regex/latest/regex/#syntax>
 
