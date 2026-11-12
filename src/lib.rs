@@ -842,9 +842,12 @@ impl Analyzer {
     /// * `recursive` - A boolean that indicates whether to search subdirectories.
     /// * `result` - A mutable reference to a vector of `PathBuf` objects that will hold the results.
     ///
+    /// Entries inside the directory that cannot be read or resolved (for example dangling
+    /// symlinks or unreadable subdirectories) are skipped with a warning.
+    ///
     /// # Errors
     /// This function will return an error if:
-    /// * The directory cannot be read or other IO errors occur.
+    /// * The directory itself cannot be read.
     pub fn find_files_in_source<P: AsRef<Path>>(
         &self,
         directory: P,
@@ -861,15 +864,34 @@ impl Analyzer {
         });
         let directory = directory.as_ref().canonicalize()?;
         for entry in entries {
-            let entry = entry?;
+            // A single entry that cannot be read or resolved must not abort the scan of the
+            // remaining entries; skip it with a warning instead.
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(err) => {
+                    warn!(
+                        "Skipping unreadable entry in folder {}: {err}",
+                        directory.display()
+                    );
+                    continue;
+                }
+            };
             let path = entry.path();
             if path.is_dir() {
                 if recursive {
                     debug!("Processing subfolder: {}", path.display());
-                    self.find_files_in_source(path, recursive, result)?;
+                    if let Err(err) = self.find_files_in_source(&path, recursive, result) {
+                        warn!("Skipping subfolder {}: {err}", path.display());
+                    }
                 }
             } else {
-                let path = path.canonicalize()?;
+                let path = match path.canonicalize() {
+                    Ok(canonical_path) => canonical_path,
+                    Err(err) => {
+                        warn!("Skipping file {}: {err}", path.display());
+                        continue;
+                    }
+                };
                 let path_no_prefix = format!(
                     "{}{}",
                     std::path::MAIN_SEPARATOR_STR,
