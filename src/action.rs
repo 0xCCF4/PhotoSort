@@ -187,11 +187,20 @@ fn copy_file<A: AsRef<Path>, B: AsRef<Path>>(
     fs::write(target, [])?; // create empty file to prevent race conditions with other threads
     drop(guard); // release the lock before copying the file
 
+    let result = copy_file_contents(source, target);
+    if result.is_err() {
+        // do not leave the empty placeholder or an incomplete copy behind
+        let _ = fs::remove_file(target);
+    }
+    result
+}
+
+/// Copies the content and the access/modification times of `source` to the existing file `target`.
+fn copy_file_contents(source: &Path, target: &Path) -> std::io::Result<()> {
     let metadata = fs::metadata(source)?;
     let result = fs::copy(source, target)?;
 
     if metadata.len() != result {
-        let _ = fs::remove_file(target);
         return Err(std::io::Error::other("File copy failed"));
     }
 
