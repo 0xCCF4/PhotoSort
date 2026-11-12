@@ -851,29 +851,43 @@ impl Analyzer {
         recursive: bool,
         result: &mut Vec<PathBuf>,
     ) -> Result<()> {
-        let mut entries =
-            fs::read_dir(directory.as_ref())?.collect::<Vec<std::io::Result<DirEntry>>>();
+        self.find_files_in_directory(directory.as_ref(), Path::new(""), recursive, result)
+    }
+
+    /// Recursive implementation of [`Analyzer::find_files_in_source`].
+    ///
+    /// `relative_directory` is the path of `directory` relative to the source directory the
+    /// scan started in. Include and exclude patterns are matched against the file path relative
+    /// to that source directory, not relative to the directory currently being scanned.
+    fn find_files_in_directory(
+        &self,
+        directory: &Path,
+        relative_directory: &Path,
+        recursive: bool,
+        result: &mut Vec<PathBuf>,
+    ) -> Result<()> {
+        let mut entries = fs::read_dir(directory)?.collect::<Vec<std::io::Result<DirEntry>>>();
         entries.sort_by(|a, b| match (a, b) {
             (Ok(a), Ok(b)) => a.path().cmp(&b.path()),
             (Err(_), Ok(_)) => Ordering::Less,
             (Ok(_), Err(_)) => Ordering::Greater,
             (Err(_), Err(_)) => Ordering::Equal,
         });
-        let directory = directory.as_ref().canonicalize()?;
         for entry in entries {
             let entry = entry?;
             let path = entry.path();
+            let relative_path = relative_directory.join(entry.file_name());
             if path.is_dir() {
                 if recursive {
                     debug!("Processing subfolder: {}", path.display());
-                    self.find_files_in_source(path, recursive, result)?;
+                    self.find_files_in_directory(&path, &relative_path, recursive, result)?;
                 }
             } else {
                 let path = path.canonicalize()?;
                 let path_no_prefix = format!(
                     "{}{}",
                     std::path::MAIN_SEPARATOR_STR,
-                    path.strip_prefix(&directory).unwrap_or(&path).display()
+                    relative_path.display()
                 );
                 trace!("Found file: {path_no_prefix}");
 
