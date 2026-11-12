@@ -335,7 +335,20 @@ impl Analyzer {
             AnalysisType::NameThenEmbedded => {
                 let name_result = self.analyze_name(name)?;
                 if name_result.0.is_none() {
-                    (self.analyze_embedded_metadata(path)?, name_result.1)
+                    // Same handling as for `EmbeddedThenName`: if neither the name nor the
+                    // embedded data provide a date, the file has no date. It is not an error.
+                    let embedded_result = match self.analyze_embedded_metadata(path) {
+                        Err(e) => {
+                            warn!(
+                                "Error analyzing embedded data: {} for {}",
+                                e,
+                                path.display()
+                            );
+                            None
+                        }
+                        Ok(date) => date,
+                    };
+                    (embedded_result, name_result.1)
                 } else {
                     name_result
                 }
