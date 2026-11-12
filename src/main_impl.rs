@@ -472,6 +472,18 @@ pub fn main() {
     files.sort();
     trace!("Sorting finished.");
 
+    // The same file can be found more than once, for example if source folders overlap or if a
+    // symlink points to a folder that is scanned as well. The paths are canonical, so such a file
+    // shows up as identical entries. Process it only once.
+    let found_files = files.len();
+    files.dedup();
+    if files.len() < found_files {
+        debug!(
+            "Ignoring {} files that were found more than once",
+            found_files - files.len()
+        );
+    }
+
     let threadpool = args.threads.map(|v| v.max(1)).map(ThreadPool::new);
     let (sender, receiver) = channel();
 
