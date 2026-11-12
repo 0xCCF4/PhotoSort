@@ -117,7 +117,9 @@ static RE_DETECT_NAME_FORMAT_COMMAND: LazyLock<regex::Regex> = LazyLock::new(|| 
 
 static RE_COMMAND_SPLIT: LazyLock<regex::Regex> = LazyLock::new(|| {
     regex::Regex::new(
-        r"^(([^:]*):)?(.*)$", // splits command into modifiers:command
+        // splits command into modifiers:command; a colon after the "?" of a command
+        // argument (e.g. "date?%H:%M") belongs to the argument and is not a separator
+        r"^(([^:?]*):)?(.*)$",
     )
     .expect("Failed to compile regex")
 });
