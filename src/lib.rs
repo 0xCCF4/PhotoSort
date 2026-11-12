@@ -576,6 +576,19 @@ impl Analyzer {
         while new_path.exists() {
             debug!("Target file already exists: {}", new_path.display());
 
+            // The existing target may be the source file itself: either the very same path
+            // (re-running on an already sorted folder) or a symlink pointing to the source.
+            // Comparing the contents would then trivially succeed and the source would be
+            // removed as a "duplicate" in move mode, deleting the only copy of the file.
+            if is_same_file(path, &new_path) {
+                info!(
+                    "Skipping file {} because it is already at its target location {}.",
+                    path.display(),
+                    new_path.display()
+                );
+                return Ok(());
+            }
+
             let source_file_stream = std::fs::File::open(&new_path).map_err(|err| {
                 anyhow!(
                     "Failed to open source file for de-duplication check: {}: {err}",
@@ -914,6 +927,16 @@ mod exifutils;
 
 pub struct BracketEXIFInformation {
     pub index: u32,
+}
+
+/// Checks whether two paths refer to the same file after resolving symlinks.
+///
+/// Returns `false` if one of the paths cannot be resolved.
+fn is_same_file(a: &Path, b: &Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    }
 }
 
 fn streams_equal<R1: Read, R2: Read>(a: R1, b: R2) -> std::io::Result<bool> {
