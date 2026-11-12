@@ -2,6 +2,9 @@ use crate::exifutils::LittleEndian;
 use crate::{exifutils, BracketEXIFInformation, Result};
 use exif::Context;
 
+/// Value of the `SequenceNumber` tag (0xb04a) if the camera does not provide a sequence number.
+const SEQUENCE_NUMBER_NOT_AVAILABLE: u32 = 0xffff;
+
 pub fn get_bracketing_info(maker_note_data: &[u8]) -> Result<Option<BracketEXIFInformation>> {
     if maker_note_data.starts_with("SONY DSC \0\0\0".as_bytes())
         || maker_note_data.starts_with("SONY CAM \0\0\0".as_bytes())
@@ -17,7 +20,7 @@ pub fn get_bracketing_info(maker_note_data: &[u8]) -> Result<Option<BracketEXIFI
             },
         };
 
-        if sequence_number > 0 {
+        if sequence_number > 0 && sequence_number != SEQUENCE_NUMBER_NOT_AVAILABLE {
             return Ok(Some(BracketEXIFInformation {
                 index: sequence_number,
             }));
