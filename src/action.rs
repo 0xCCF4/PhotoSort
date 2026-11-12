@@ -3,7 +3,7 @@ use filetime::FileTime;
 use log::{debug, error, trace};
 use std::fmt::{Display, Formatter};
 use std::fs;
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 use std::str::FromStr;
 use std::sync::MutexGuard;
 
@@ -263,15 +263,56 @@ fn relative_symlink_file<A: AsRef<Path>, B: AsRef<Path>>(
     let source = source.as_ref();
     let target = target.as_ref();
 
+    let link_target = relative_link_target(source, target)?;
+
     debug!(
-        "Creating symlink {} -> {}",
+        "Creating relative symlink {} -> {} (link target: {})",
         source.display(),
-        target.display()
+        target.display(),
+        link_target.display()
     );
 
-    symlink::symlink_file(source, target)?;
+    symlink::symlink_file(&link_target, target)?;
 
     Ok(())
+}
+
+/// Computes the path of `source` relative to the directory that contains `target`.
+///
+/// A symlink target is resolved relative to the directory the link is located in, so this is
+/// the path that has to be stored in a relative symlink created at `target`.
+///
+/// If the two paths have no common ancestor (for example different drives on Windows), the
+/// absolute path of `source` is returned instead.
+fn relative_link_target(source: &Path, target: &Path) -> std::io::Result<PathBuf> {
+    let source = fs::canonicalize(source)?;
+    let target_dir = target
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let target_dir = fs::canonicalize(target_dir)?;
+
+    let source_components: Vec<Component> = source.components().collect();
+    let target_dir_components: Vec<Component> = target_dir.components().collect();
+
+    let common = source_components
+        .iter()
+        .zip(&target_dir_components)
+        .take_while(|(a, b)| a == b)
+        .count();
+    if common == 0 {
+        return Ok(source);
+    }
+
+    let mut relative = PathBuf::new();
+    for _ in common..target_dir_components.len() {
+        relative.push(Component::ParentDir);
+    }
+    for component in &source_components[common..] {
+        relative.push(component);
+    }
+
+    Ok(relative)
 }
 
 fn absolute_symlink_file<A: AsRef<Path>, B: AsRef<Path>>(
@@ -288,5 +329,7 @@ fn absolute_symlink_file<A: AsRef<Path>, B: AsRef<Path>>(
     );
     let source = fs::canonicalize(source)?;
 
-    relative_symlink_file(&source, target)
+    symlink::symlink_file(&source, target)?;
+
+    Ok(())
 }
