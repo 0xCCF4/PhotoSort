@@ -565,7 +565,7 @@ impl Analyzer {
         let mut new_path = new_file_path(&data)?;
         let mut dup_counter = 0;
 
-        let lock_rename = match LOCK_MOVE_OPERATION.lock() {
+        let mut lock_rename = match LOCK_MOVE_OPERATION.lock() {
             Ok(guard) => Some(guard),
             Err(err) => {
                 warn!("Failed to acquire lock for move operation: {err}");
@@ -574,6 +574,16 @@ impl Analyzer {
         };
 
         while new_path.exists() {
+            // Another thread may still be copying a file to this target. Comparing with the
+            // incomplete file would wrongly classify an identical source file as different, so
+            // wait until that copy has finished. The lock is released while waiting.
+            if action::is_copy_in_progress(&new_path) {
+                drop(lock_rename.take());
+                std::thread::sleep(std::time::Duration::from_millis(10));
+                lock_rename = LOCK_MOVE_OPERATION.lock().ok();
+                continue;
+            }
+
             debug!("Target file already exists: {}", new_path.display());
 
             let source_file_stream = std::fs::File::open(&new_path).map_err(|err| {

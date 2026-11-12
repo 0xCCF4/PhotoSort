@@ -1,11 +1,50 @@
 use anyhow::{anyhow, Result};
 use filetime::FileTime;
 use log::{debug, error, trace};
+use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::sync::MutexGuard;
+use std::sync::{LazyLock, Mutex, MutexGuard};
+
+/// Target files that are currently being written by a copy operation.
+static COPIES_IN_PROGRESS: LazyLock<Mutex<HashSet<PathBuf>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
+
+/// Checks whether another thread is still copying a file to `target`.
+///
+/// While this is the case, the file at `target` is an empty placeholder or incomplete and must
+/// not be compared with other files.
+pub(crate) fn is_copy_in_progress(target: &Path) -> bool {
+    COPIES_IN_PROGRESS
+        .lock()
+        .is_ok_and(|targets| targets.contains(target))
+}
+
+/// Marks a target file as being written for as long as this value exists.
+struct CopyInProgress {
+    target: PathBuf,
+}
+
+impl CopyInProgress {
+    fn new(target: &Path) -> Self {
+        if let Ok(mut targets) = COPIES_IN_PROGRESS.lock() {
+            targets.insert(target.to_path_buf());
+        }
+        Self {
+            target: target.to_path_buf(),
+        }
+    }
+}
+
+impl Drop for CopyInProgress {
+    fn drop(&mut self) {
+        if let Ok(mut targets) = COPIES_IN_PROGRESS.lock() {
+            targets.remove(&self.target);
+        }
+    }
+}
 
 /// `ActualAction` is an enumeration that defines the different types of actions that can be performed on a file.
 ///
@@ -185,6 +224,10 @@ fn copy_file<A: AsRef<Path>, B: AsRef<Path>>(
     debug!("Copying {} -> {}", source.display(), target.display());
 
     fs::write(target, [])?; // create empty file to prevent race conditions with other threads
+
+    // Registered before the lock is released, so that other threads never see the placeholder
+    // without knowing that it is still being written.
+    let _copy_in_progress = CopyInProgress::new(target);
     drop(guard); // release the lock before copying the file
 
     let metadata = fs::metadata(source)?;
