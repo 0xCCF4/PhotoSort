@@ -14,9 +14,13 @@ use std::collections::VecDeque;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 use threadpool::ThreadPool;
+
+/// Number of files that could not be processed, used to derive the exit code.
+static FAILED_FILES: AtomicUsize = AtomicUsize::new(0);
 
 /// A simple command line tool to sort photos by date.
 #[derive(Parser, Debug)]
@@ -455,6 +459,7 @@ pub fn main() {
     debug!("Running program");
 
     let mut files = Vec::new();
+    let mut failed_sources: usize = 0;
 
     for source_dir in &analyzer.settings.source_dirs {
         info!("Processing source folder: {}", source_dir.display());
@@ -465,6 +470,7 @@ pub fn main() {
         );
         if let Err(err) = result {
             error!("Error processing folder: {err}");
+            failed_sources += 1;
         }
     }
 
@@ -618,11 +624,20 @@ pub fn main() {
 
         if count != jobs {
             error!("Not all jobs got executed");
+            FAILED_FILES.fetch_add(jobs - count, Ordering::Relaxed);
         }
     }
 
     if let Some(bar) = &bar {
         bar.finish_with_message("Finished processing files");
+    }
+
+    let failed_files = FAILED_FILES.load(Ordering::Relaxed);
+    if failed_files > 0 || failed_sources > 0 {
+        error!(
+            "Finished with errors: {failed_files} of {jobs} file(s) could not be processed, {failed_sources} source folder(s) could not be scanned completely"
+        );
+        std::process::exit(exitcode::DATAERR);
     }
 
     debug!("Finished execution");
@@ -739,6 +754,7 @@ fn process_file(
             let result = context.analyzer.run_file(&file, &bracket_info);
             if let Err(err) = result {
                 error!("Error processing file: {err}");
+                FAILED_FILES.fetch_add(1, Ordering::Relaxed);
             }
         }
         ExecutionContext::MultiThreaded(context) => {
@@ -748,6 +764,7 @@ fn process_file(
                 let result = analyzer.run_file(&file, &bracket_info);
                 if let Err(err) = result {
                     error!("Error processing file: {err}");
+                    FAILED_FILES.fetch_add(1, Ordering::Relaxed);
                 }
                 output.send(()).expect("thread pool channel closed");
             });
