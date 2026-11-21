@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use filetime::FileTime;
-use log::{debug, error, trace};
+use log::{debug, error, info, trace};
 use std::fmt::{Display, Formatter};
 use std::fs;
 use std::path::Path;
@@ -36,6 +36,9 @@ impl Display for ActualAction {
         }
     }
 }
+
+/// Log target of the dry-run plan lines.
+pub const PLAN_TARGET: &str = "photo_sort::plan";
 
 /// `ActionMode` defines the mode of operation of the tool
 ///
@@ -127,7 +130,7 @@ pub fn file_action<P: AsRef<Path>, Q: AsRef<Path>>(
             }
 
             if matches!(action, ActionMode::DryRun(_)) {
-                error!("[Mkdir] {}", parent.display());
+                info!(target: PLAN_TARGET, "[Mkdir] {}", parent.display());
             } else {
                 fs::create_dir_all(parent).map_err(|e| {
                     anyhow!("Failed to create target subfolder: {parent:?} - {e:?}")
@@ -155,7 +158,8 @@ pub fn file_action<P: AsRef<Path>, Q: AsRef<Path>>(
 }
 
 fn dry_run<A: AsRef<Path>, B: AsRef<Path>>(source: A, target: B, action: ActualAction) {
-    error!(
+    info!(
+        target: PLAN_TARGET,
         "[{}] {} -> {}",
         action,
         source.as_ref().display(),

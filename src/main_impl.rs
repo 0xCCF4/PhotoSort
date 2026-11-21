@@ -184,16 +184,32 @@ fn setup_loggers<Q: AsRef<Path>>(
     stdout_log_level: LevelFilter,
     file: Option<Q>,
     progress: Option<MultiProgress>,
+    print_plan: bool,
 ) -> anyhow::Result<()> {
     let colors = ColoredLevelConfig::new().info(Color::Green);
 
-    let mut config = fern::Dispatch::new().level(general_log_level);
+    let is_plan = |meta: &log::Metadata| meta.target() == action::PLAN_TARGET;
+
+    // We do filtering below, here jsut allow all
+    let mut config = fern::Dispatch::new().level(LevelFilter::Trace);
 
     if let Some(file) = file {
+        let log_file = fern::log_file(file)
+            .map_err(|err| anyhow::anyhow!("Failed to open log file: {err:?}"))?;
         config = config.chain(
             fern::Dispatch::new()
-                .format(move |out, message, record| {
-                    if message.to_string().starts_with('[') {
+                .filter(move |meta| {
+                    if is_plan(meta) {
+                        // allow dry run log lines always
+                        true
+                    } else {
+                        // else filter by priority
+                        general_log_level >= meta.level()
+                    }
+                })
+                .format(|out, message, record| {
+                    if record.target() == action::PLAN_TARGET {
+                        // no prefix on dry run log lines
                         out.finish(format_args!("{message}"));
                     } else {
                         out.finish(format_args!(
@@ -205,18 +221,22 @@ fn setup_loggers<Q: AsRef<Path>>(
                         ));
                     }
                 })
-                .chain(
-                    fern::log_file(file)
-                        .map_err(|err| anyhow::anyhow!("Failed to open log file: {err:?}"))?,
-                ),
+                .chain(log_file),
         );
     }
 
     let (max_level, log) = config
         .chain(
             fern::Dispatch::new()
+                .filter(move |meta| {
+                    if is_plan(meta) {
+                        print_plan
+                    } else {
+                        stdout_log_level >= meta.level()
+                    }
+                })
                 .format(move |out, message, record| {
-                    if message.to_string().starts_with('[') {
+                    if record.target() == action::PLAN_TARGET {
                         out.finish(format_args!("{message}"));
                     } else {
                         out.finish(format_args!(
@@ -228,7 +248,6 @@ fn setup_loggers<Q: AsRef<Path>>(
                         ));
                     }
                 })
-                .level(stdout_log_level)
                 .chain(std::io::stdout()),
         )
         .into_log();
@@ -380,6 +399,7 @@ pub fn main() {
         console_log_level,
         args.logfile,
         multi_clone,
+        !args.quiet,
     ) {
         eprintln!("Error starting application: {e:?}");
         std::process::exit(exitcode::CONFIG);
