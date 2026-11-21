@@ -7,6 +7,11 @@
   withVideo ? true,
 }:
 
+assert lib.assertMsg (!withVideo || lib.versionAtLeast rustPlatform.rust.rustc.version "1.88") ''
+  ffmpeg-sys-next needs rustc 1.88 or newer, but this nixpkgs provides
+  ${rustPlatform.rust.rustc.version}. Build with `withVideo = false` or use a
+  newer nixpkgs release.'';
+
 rustPlatform.buildRustPackage {
   pname = "photo_sort";
   version = (lib.importTOML ../Cargo.toml).package.version;

@@ -254,6 +254,8 @@ For using the video sorting feature follow the instructions on <https://crates.i
 their wiki <https://github.com/zmwangx/rust-ffmpeg/wiki/Notes-on-building>. After installing the
 dependencies, you can install the `photo_sort` binary with the `video` feature enabled:
 
+The `video` feature needs rustc 1.88 or newer, because `ffmpeg-sys-next` uses let chains. 
+
 ```bash
 cargo install --features video photo_sort
 ```
