@@ -305,7 +305,10 @@ where
     let vallen = unitlen
         .checked_mul(cnt as usize)
         .ok_or(Error::InvalidFormat("Invalid entry count"))?;
-    let val = if vallen <= 4 {
+    let val = if unitlen == 0 {
+        // Unknown type code: the value cannot be interpreted and there is no parser for it.
+        Value::Unknown(typ, cnt, u32::try_from(valofs_at).unwrap_or(u32::MAX))
+    } else if vallen <= 4 {
         parser(data, valofs_at, cnt as usize)
     } else {
         let ofs = E::loadu32(data, valofs_at) as usize;
