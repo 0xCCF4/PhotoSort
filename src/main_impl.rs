@@ -95,7 +95,7 @@ struct Arguments {
     include_files: Vec<String>,
     /// Same as `--include` but accepts regular expressions instead of literals with wildcards. `*` and `**` wildcards do not work in the regex patterns but
     /// are interpreted as regex match the last pattern character 0 or more times. For a list of supported regex patterns, see <https://docs.rs/regex/latest/regex/#syntax>
-    #[arg(long = "include_regex")]
+    #[arg(long = "include-regex", alias = "include_regex")]
     include_files_regex: Vec<String>,
     /// When set the include pattern to do not ignore upper/lower case.
     #[arg(long)]
