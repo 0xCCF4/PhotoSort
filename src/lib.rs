@@ -55,9 +55,8 @@ impl FromStr for AnalysisType {
 
     fn from_str(s: &str) -> Result<Self> {
         match s.to_lowercase().as_str() {
-            "only_exif" | "exif" | "embedded" | "only_embedded" | "metadata" | "e" | "m" => {
-                Ok(AnalysisType::OnlyEmbedded)
-            }
+            "only_exif" | "exif" | "embedded" | "only_embedded" | "metadata" | "only_metadata"
+            | "e" | "m" => Ok(AnalysisType::OnlyEmbedded),
             "only_name" | "name" | "n" => Ok(AnalysisType::OnlyName),
             "exif_then_name" | "exif_name" | "embedded_then_name" | "metadata_then_name" | "mn"
             | "en" => Ok(AnalysisType::EmbeddedThenName),

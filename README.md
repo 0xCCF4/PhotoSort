@@ -244,13 +244,11 @@ or
 cargo install --git https://github.com/0xCCF4/PhotoSort
 ```
 
-or
+or, with Nix:
 
 ```bash
 nix run github:0xCCF4/PhotoSort -- <args>
 ```
-
-The `photo_sort` binary will then be available.
 
 For using the video sorting feature follow the instructions on <https://crates.io/crates/ffmpeg-next> and respective
 their wiki <https://github.com/zmwangx/rust-ffmpeg/wiki/Notes-on-building>. After installing the
@@ -270,6 +268,17 @@ cargo install --git https://github.com/0xCCF4/PhotoSort --features video
 
 Contributions to `PhotoSort` are welcome! If you have a feature request, bug report, or want to contribute to the code,
 please open an issue or a pull request.
+
+### Development
+
+The flake provides a development shell with the Rust toolchain, clippy, rustfmt, rust-analyzer
+and the ffmpeg dependencies of the `video` feature:
+
+```bash
+nix develop
+cargo build --features video
+cargo clippy --all-targets
+```
 
 ### Something works differently than expected?
 
