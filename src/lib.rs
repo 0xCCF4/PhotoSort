@@ -10,8 +10,9 @@ use action::ActionMode;
 use anyhow::{anyhow, Result};
 use chrono::NaiveDateTime;
 use log::{debug, error, info, trace, warn};
-use regex::Regex;
+use regex::{Regex, RegexBuilder};
 use std::cmp::Ordering;
+use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::fs;
 use std::fs::{DirEntry, File};
@@ -23,6 +24,11 @@ use std::sync::LazyLock;
 pub mod action;
 pub mod analysis;
 pub mod name;
+#[doc(hidden)]
+pub mod testutils;
+
+#[cfg(test)]
+mod tests;
 
 /// `AnalysisType` is an enumeration that defines the different types of analysis that can be performed on a file.
 ///
@@ -105,6 +111,75 @@ pub struct AnalyzerSettings {
     pub mkdir: bool,
     pub excluded_files: Vec<Regex>,
     pub included_files: Vec<Regex>,
+}
+
+/// Builds the regular expressions for the file include and exclude patterns.
+///
+/// `wildcards` holds patterns with wildcards. In a pattern, `*` matches any
+/// number of characters except the path separator. `**` matches any number of
+/// characters, including the path separator. Every wildcard pattern starts
+/// with the path separator.
+/// Both kinds of pattern are matched against a file path relative to the source
+/// directory. `regexes` holds regular expressions that are used without change.
+/// The result is the concatenation of both lists.
+///
+/// # Arguments
+/// * `wildcards`: The wildcard patterns.
+/// * `regexes`: The regular expressions.
+/// * `ignore_case`: Whether the patterns ignore the case of the path.
+///
+/// # Returns
+/// * `Result<Vec<Regex>>`: The compiled patterns.
+///
+/// # Errors
+/// This function will return an error if:
+/// * `**` follows `**` with a path separator in between.
+/// * A regular expression is invalid.
+pub fn build_file_patterns<A, B>(wildcards: A, regexes: B, ignore_case: bool) -> Result<Vec<Regex>>
+where
+    A: IntoIterator,
+    A::Item: AsRef<str>,
+    B: IntoIterator,
+    B::Item: AsRef<str>,
+{
+    let wildcard_patterns = wildcards
+        .into_iter()
+        .map(|wildcard| wildcard_to_regex(wildcard.as_ref()))
+        .collect::<Result<Vec<String>>>()?;
+    wildcard_patterns
+        .into_iter()
+        .chain(regexes.into_iter().map(|regex| regex.as_ref().to_string()))
+        .map(|pattern| {
+            trace!("Compiling file pattern {pattern:?}");
+            RegexBuilder::new(&pattern)
+                .case_insensitive(ignore_case)
+                .build()
+                .map_err(|err| anyhow!("Invalid file pattern {pattern:?}: {err}"))
+        })
+        .collect()
+}
+
+/// Converts one wildcard pattern into an anchored regular expression.
+fn wildcard_to_regex(pattern: &str) -> Result<String> {
+    let separator = std::path::MAIN_SEPARATOR_STR;
+    let escaped_separator = regex::escape(separator);
+    if pattern.contains(format!("**{separator}**").as_str()) {
+        return Err(anyhow!(
+            "Invalid file pattern {pattern:?}: '**' must not follow '**' with a path separator in between"
+        ));
+    }
+    Ok(format!(
+        "^{}$",
+        regex::escape(pattern)
+            .replace(
+                format!("{escaped_separator}\\*\\*{escaped_separator}").as_str(),
+                "/.*?"
+            )
+            .replace(format!("{escaped_separator}\\*\\*").as_str(), "/.*?")
+            .replace(format!("\\*\\*{escaped_separator}").as_str(), ".*?/")
+            .replace("\\*\\*", ".*?")
+            .replace("\\*", &format!("[^{escaped_separator}]*?"))
+    ))
 }
 
 static RE_DETECT_NAME_FORMAT_COMMAND: LazyLock<regex::Regex> = LazyLock::new(|| {
@@ -836,10 +911,25 @@ impl Analyzer {
 
     /// Finds all files in a source directory and its subdirectories.
     ///
+    /// The patterns in [`AnalyzerSettings::excluded_files`] and
+    /// [`AnalyzerSettings::included_files`] are matched against the path of a
+    /// file relative to `directory`, prefixed by the main path separator. This
+    /// holds for files in subdirectories as well, so a file `sub/photo.jpg` in
+    /// the source directory `C` is matched as `/sub/photo.jpg`.
+    ///
+    /// Symbolic links are followed. A file behind a link is matched with the
+    /// path under which it appears in the source directory. A link
+    /// `C/link.jpg` to `C/sub/photo.jpg` is therefore matched as `/link.jpg`.
+    /// The path in `result` is the resolved path of the file.
+    ///
+    /// A file that the scan finds more than once, for example through a link and
+    /// directly, is added to `result` once. The comparison uses the resolved
+    /// path, so two names of the same file count as one file.
+    ///
     /// # Arguments
-    /// * `directory` - The directory to search for files.
-    /// * `recursive` - A boolean that indicates whether to search subdirectories.
-    /// * `result` - A mutable reference to a vector of `PathBuf` objects that will hold the results.
+    /// * `directory`: The directory to search for files.
+    /// * `recursive`: A boolean that indicates whether to search subdirectories.
+    /// * `result`: A mutable reference to a vector of `PathBuf` objects that will hold the results.
     ///
     /// # Errors
     /// This function will return an error if:
@@ -850,29 +940,56 @@ impl Analyzer {
         recursive: bool,
         result: &mut Vec<PathBuf>,
     ) -> Result<()> {
-        let mut entries =
-            fs::read_dir(directory.as_ref())?.collect::<Vec<std::io::Result<DirEntry>>>();
+        let mut known = result.iter().cloned().collect::<HashSet<PathBuf>>();
+        self.find_files_in_dir(
+            directory.as_ref(),
+            Path::new(""),
+            recursive,
+            result,
+            &mut known,
+        )
+    }
+
+    /// Recursive helper of [`Analyzer::find_files_in_source`].
+    ///
+    /// `relative_directory` is the path of `directory` relative to the source
+    /// directory the scan started in. The include and exclude patterns are
+    /// matched against the file path relative to that source directory, built
+    /// from the names of the directory entries. Following a link does not
+    /// change this path.
+    ///
+    /// `known` holds the resolved paths that are already in `result`. It keeps a
+    /// file that the scan finds several times in the result only once.
+    fn find_files_in_dir(
+        &self,
+        directory: &Path,
+        relative_directory: &Path,
+        recursive: bool,
+        result: &mut Vec<PathBuf>,
+        known: &mut HashSet<PathBuf>,
+    ) -> Result<()> {
+        let mut entries = fs::read_dir(directory)?.collect::<Vec<std::io::Result<DirEntry>>>();
         entries.sort_by(|a, b| match (a, b) {
             (Ok(a), Ok(b)) => a.path().cmp(&b.path()),
             (Err(_), Ok(_)) => Ordering::Less,
             (Ok(_), Err(_)) => Ordering::Greater,
             (Err(_), Err(_)) => Ordering::Equal,
         });
-        let directory = directory.as_ref().canonicalize()?;
         for entry in entries {
             let entry = entry?;
             let path = entry.path();
+            let relative_path = relative_directory.join(entry.file_name());
             if path.is_dir() {
                 if recursive {
                     debug!("Processing subfolder: {}", path.display());
-                    self.find_files_in_source(path, recursive, result)?;
+                    self.find_files_in_dir(&path, &relative_path, recursive, result, known)?;
                 }
             } else {
                 let path = path.canonicalize()?;
                 let path_no_prefix = format!(
                     "{}{}",
                     std::path::MAIN_SEPARATOR_STR,
-                    path.strip_prefix(&directory).unwrap_or(&path).display()
+                    relative_path.display()
                 );
                 trace!("Found file: {path_no_prefix}");
 
@@ -898,7 +1015,7 @@ impl Analyzer {
                     exclude_it = exclude_it || matching;
                 }
 
-                if include_it && !exclude_it {
+                if include_it && !exclude_it && known.insert(path.clone()) {
                     trace!(" -> Included file: {path:?}");
                     result.push(path);
                 }
