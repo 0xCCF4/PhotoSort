@@ -785,7 +785,7 @@ impl Analyzer {
                     .settings
                     .extensions
                     .iter()
-                    .any(|valid_ext| ext == valid_ext.as_str()))
+                    .any(|valid_ext| ext == valid_ext.to_lowercase()))
             }
         }
     }
@@ -814,7 +814,7 @@ impl Analyzer {
                     .settings
                     .video_extensions
                     .iter()
-                    .any(|valid_ext| ext == valid_ext.as_str()))
+                    .any(|valid_ext| ext == valid_ext.to_lowercase()))
             }
         }
     }
