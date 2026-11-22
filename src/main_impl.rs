@@ -8,8 +8,8 @@ use log::{debug, error, info, trace, warn, LevelFilter};
 use photo_sort::analysis::bracketed::get_bracketing_info;
 use photo_sort::analysis::exif2date::ExifDateType;
 use photo_sort::analysis::name_formatters::{BracketInfo, BracketingFormattingPriority};
-use photo_sort::{action, AnalysisType, Analyzer, BracketEXIFInformation};
-use regex::{Regex, RegexBuilder};
+use photo_sort::{action, build_file_patterns, AnalysisType, Analyzer, BracketEXIFInformation};
+use regex::Regex;
 use std::collections::{HashSet, VecDeque};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -92,7 +92,12 @@ struct Arguments {
     /// option could be useful to exclude files like `Thumbs.db` or `.DS_Store` from being moved to the `--unknown` folder. The `--exclude`
     /// option matches the relative file path to the respective source directory to the given string (prefixed by the os path separator). `*` may be used to indicate any number of any characters,
     /// excluding path separators. `**` may be used to indicate any number of any characters, including path separators. For example, `--exclude /abc/*/test/**/Thumbs.db`
-    /// would exclude any file named `Thumbs.db` in a `abc/<subdir>/test/<any subdirs>/Thumbs.db` folder structure. On Windows use backslash instead.
+    /// excludes any file named `Thumbs.db` in a `abc/<subdir>/test/<any subdirs>/Thumbs.db` folder structure. On Windows use backslash instead.
+    /// Symbolic links are followed. A file behind a link is matched with the path under which it appears in the source directory.
+    /// A pattern without a directory part matches in the source directory
+    /// itself only. `--exclude /Thumbs.db` therefore excludes that file in the
+    /// source directory and not in its subdirectories. Use
+    /// `--exclude **/Thumbs.db` to exclude that file name at every level.
     /// The `--exclude` may be used multiple times to exclude multiple patterns. If any pattern matches, the file is excluded.
     /// The `--exclude-regex` option works the same but accepts a regular expression instead of literals with wildcards.
     /// By default, the pattern matching is ignoring case. To enable case matching set `--exclude-case`.
@@ -299,38 +304,21 @@ fn parse_regex_patterns<
     ignore_case: bool,
     help_text: &str,
 ) -> Vec<Regex> {
-    let files_regexes = non_regex.into_iter().map(|file_no_regex| {
-        let file_no_regex = file_no_regex.as_ref();
-        if file_no_regex.contains(format!("**{}**", std::path::MAIN_SEPARATOR_STR).as_str()) {
-            eprintln!("Error: Invalid {help_text} pattern {file_no_regex:?}: '**' is not allowed to follow consecutively after each other with a path separator in between");
+    match build_file_patterns(non_regex, regex, ignore_case) {
+        Ok(files_regexes) => {
+            if !files_regexes.is_empty() {
+                trace!("{help_text} files regexes:");
+                for regex in &files_regexes {
+                    trace!(" - {}", regex.as_str());
+                }
+            }
+            files_regexes
+        }
+        Err(err) => {
+            eprintln!("Error: {help_text} pattern: {err}");
             std::process::exit(exitcode::CONFIG);
         }
-        let escaped_sep = regex::escape(std::path::MAIN_SEPARATOR_STR);
-        format!("^{}$",
-                regex::escape(file_no_regex)
-                    .replace(format!("{escaped_sep}\\*\\*{escaped_sep}").as_str(), "/.*?")
-                    .replace(format!("{escaped_sep}\\*\\*").as_str(), "/.*?")
-                    .replace(format!("\\*\\*{escaped_sep}").as_str(), ".*?/")
-                    .replace("\\*\\*", ".*?")
-                    .replace("\\*", &format!("[^{escaped_sep}]*?")))
-    }).chain(regex.map(|x|x.as_ref().to_string())).map(|x| {
-        let x = x.as_ref();
-        trace!("Compiling include file regex {x:?}");
-        match RegexBuilder::new(x).case_insensitive(ignore_case).build() {
-            Ok(regex) => regex,
-            Err(err) => {
-                eprintln!("Failing to compile included files regular expression {x:?}: {err:?}");
-                std::process::exit(exitcode::CONFIG);
-            }
-        }
-    }).collect::<Vec<_>>();
-    if !files_regexes.is_empty() {
-        trace!("{help_text} files regexes:");
-        for regex in &files_regexes {
-            trace!(" - {}", regex.as_str());
-        }
     }
-    files_regexes
 }
 
 fn build_manpage(path: &Path) -> anyhow::Result<()> {

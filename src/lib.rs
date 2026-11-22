@@ -10,7 +10,7 @@ use action::ActionMode;
 use anyhow::{anyhow, Result};
 use chrono::NaiveDateTime;
 use log::{debug, error, info, trace, warn};
-use regex::Regex;
+use regex::{Regex, RegexBuilder};
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::ffi::OsStr;
@@ -24,6 +24,11 @@ use std::sync::LazyLock;
 pub mod action;
 pub mod analysis;
 pub mod name;
+#[doc(hidden)]
+pub mod testutils;
+
+#[cfg(test)]
+mod tests;
 
 /// `AnalysisType` is an enumeration that defines the different types of analysis that can be performed on a file.
 ///
@@ -110,6 +115,75 @@ pub struct AnalyzerSettings {
     pub mkdir: bool,
     pub excluded_files: Vec<Regex>,
     pub included_files: Vec<Regex>,
+}
+
+/// Builds the regular expressions for the file include and exclude patterns.
+///
+/// `wildcards` holds patterns with wildcards. In a pattern, `*` matches any
+/// number of characters except the path separator. `**` matches any number of
+/// characters, including the path separator. Every wildcard pattern starts
+/// with the path separator.
+/// Both kinds of pattern are matched against a file path relative to the source
+/// directory. `regexes` holds regular expressions that are used without change.
+/// The result is the concatenation of both lists.
+///
+/// # Arguments
+/// * `wildcards`: The wildcard patterns.
+/// * `regexes`: The regular expressions.
+/// * `ignore_case`: Whether the patterns ignore the case of the path.
+///
+/// # Returns
+/// * `Result<Vec<Regex>>`: The compiled patterns.
+///
+/// # Errors
+/// This function will return an error if:
+/// * `**` follows `**` with a path separator in between.
+/// * A regular expression is invalid.
+pub fn build_file_patterns<A, B>(wildcards: A, regexes: B, ignore_case: bool) -> Result<Vec<Regex>>
+where
+    A: IntoIterator,
+    A::Item: AsRef<str>,
+    B: IntoIterator,
+    B::Item: AsRef<str>,
+{
+    let wildcard_patterns = wildcards
+        .into_iter()
+        .map(|wildcard| wildcard_to_regex(wildcard.as_ref()))
+        .collect::<Result<Vec<String>>>()?;
+    wildcard_patterns
+        .into_iter()
+        .chain(regexes.into_iter().map(|regex| regex.as_ref().to_string()))
+        .map(|pattern| {
+            trace!("Compiling file pattern {pattern:?}");
+            RegexBuilder::new(&pattern)
+                .case_insensitive(ignore_case)
+                .build()
+                .map_err(|err| anyhow!("Invalid file pattern {pattern:?}: {err}"))
+        })
+        .collect()
+}
+
+/// Converts one wildcard pattern into an anchored regular expression.
+fn wildcard_to_regex(pattern: &str) -> Result<String> {
+    let separator = std::path::MAIN_SEPARATOR_STR;
+    let escaped_separator = regex::escape(separator);
+    if pattern.contains(format!("**{separator}**").as_str()) {
+        return Err(anyhow!(
+            "Invalid file pattern {pattern:?}: '**' must not follow '**' with a path separator in between"
+        ));
+    }
+    Ok(format!(
+        "^{}$",
+        regex::escape(pattern)
+            .replace(
+                format!("{escaped_separator}\\*\\*{escaped_separator}").as_str(),
+                "/.*?"
+            )
+            .replace(format!("{escaped_separator}\\*\\*").as_str(), "/.*?")
+            .replace(format!("\\*\\*{escaped_separator}").as_str(), ".*?/")
+            .replace("\\*\\*", ".*?")
+            .replace("\\*", &format!("[^{escaped_separator}]*?"))
+    ))
 }
 
 static RE_DETECT_NAME_FORMAT_COMMAND: LazyLock<regex::Regex> = LazyLock::new(|| {
@@ -843,17 +917,31 @@ impl Analyzer {
 
     /// Finds all files in a source directory and its subdirectories.
     ///
-    /// Every directory and every file is processed only once. The canonical paths are recorded in
-    /// `visited_paths`. A path that is reached twice (for example through a symbolic link or
-    /// overlapping source directories) is skipped the second time. This also prevents endless
-    /// recursion on symlink cycles.
+    /// The patterns in [`AnalyzerSettings::excluded_files`] and
+    /// [`AnalyzerSettings::included_files`] are matched against the path of a
+    /// file relative to `directory`, prefixed by the main path separator. This
+    /// holds for files in subdirectories as well, so a file `sub/photo.jpg` in
+    /// the source directory `C` is matched as `/sub/photo.jpg`.
+    ///
+    /// Symbolic links are followed. A file behind a link is matched with the
+    /// path under which it appears in the source directory. A link
+    /// `C/link.jpg` to `C/sub/photo.jpg` is therefore matched as `/link.jpg`.
+    /// The path in `result` is the resolved path of the file.
+    ///
+    /// A file that the scan finds more than once, for example through a link and
+    /// directly, is added to `result` once. The comparison uses the resolved
+    /// path in `visited_paths`, so two names of the same file count as one file.
+    /// A directory that is reached by several routes is scanned for each route,
+    /// because the patterns can differ for each of them. A link that points to
+    /// one of its parent directories is skipped, so a link cycle ends.
     ///
     /// # Arguments
-    /// * `directory` - The directory to search for files.
-    /// * `recursive` - A boolean that indicates whether to search subdirectories.
-    /// * `visited_paths` - The set of canonical paths of directories and files that were already
-    ///   collected. It is shared across all source directories. Pass an empty set on start.
-    /// * `result` - A mutable reference to a vector of `PathBuf` objects that will hold the results.
+    /// * `directory`: The directory to search for files.
+    /// * `recursive`: A boolean that indicates whether to search subdirectories.
+    /// * `visited_paths`: The set of resolved file paths that were already
+    ///   collected. It is shared across all source directories. Pass an empty set
+    ///   on start.
+    /// * `result`: A mutable reference to a vector of `PathBuf` objects that will hold the results.
     ///
     /// # Errors
     /// This function will return an error if:
@@ -869,16 +957,48 @@ impl Analyzer {
         visited_paths: &mut HashSet<PathBuf>,
         result: &mut Vec<PathBuf>,
     ) -> Result<()> {
-        let directory = directory.as_ref().canonicalize()?;
-        if !visited_paths.insert(directory.clone()) {
+        let mut ancestors = HashSet::new();
+        self.find_files_in_dir(
+            directory.as_ref(),
+            Path::new(""),
+            recursive,
+            visited_paths,
+            &mut ancestors,
+            result,
+        )
+    }
+
+    /// Recursive helper of [`Analyzer::find_files_in_source`].
+    ///
+    /// `relative_directory` is the path of `directory` relative to the source
+    /// directory the scan started in. The include and exclude patterns are
+    /// matched against the file path relative to that source directory, built
+    /// from the names of the directory entries. Following a link does not
+    /// change this path.
+    ///
+    /// `visited_paths` holds the resolved file paths that are already in
+    /// `result`. `ancestors` holds the resolved paths of the directories on the
+    /// current path to the root. A link back to one of them causes endless
+    /// recursion, so the scan skips it.
+    fn find_files_in_dir(
+        &self,
+        directory: &Path,
+        relative_directory: &Path,
+        recursive: bool,
+        visited_paths: &mut HashSet<PathBuf>,
+        ancestors: &mut HashSet<PathBuf>,
+        result: &mut Vec<PathBuf>,
+    ) -> Result<()> {
+        let canonical_directory = directory.canonicalize()?;
+        if !ancestors.insert(canonical_directory.clone()) {
             debug!(
-                "Skipping directory that was already searched: {}",
+                "Skipping symbolic link that points to a parent directory: {}",
                 directory.display()
             );
             return Ok(());
         }
 
-        let mut entries = fs::read_dir(&directory)?.collect::<Vec<std::io::Result<DirEntry>>>();
+        let mut entries = fs::read_dir(directory)?.collect::<Vec<std::io::Result<DirEntry>>>();
         entries.sort_by(|a, b| match (a, b) {
             (Ok(a), Ok(b)) => a.path().cmp(&b.path()),
             (Err(_), Ok(_)) => Ordering::Less,
@@ -889,6 +1009,7 @@ impl Analyzer {
             let entry = entry?;
             let path = entry.path();
             let file_type = entry.file_type()?;
+            let relative_path = relative_directory.join(entry.file_name());
             let is_dir = if file_type.is_symlink() {
                 path.is_dir()
             } else {
@@ -901,7 +1022,14 @@ impl Analyzer {
                         continue;
                     }
                     debug!("Processing subfolder: {}", path.display());
-                    self.find_files_in_source(&path, recursive, visited_paths, result)?;
+                    self.find_files_in_dir(
+                        &path,
+                        &relative_path,
+                        recursive,
+                        visited_paths,
+                        ancestors,
+                        result,
+                    )?;
                 }
             } else {
                 if file_type.is_symlink() && self.settings.dont_follow_symlinked_files {
@@ -918,7 +1046,7 @@ impl Analyzer {
                 let path_no_prefix = format!(
                     "{}{}",
                     std::path::MAIN_SEPARATOR_STR,
-                    path.strip_prefix(&directory).unwrap_or(&path).display()
+                    relative_path.display()
                 );
                 trace!("Found file: {path_no_prefix}");
 
@@ -955,6 +1083,7 @@ impl Analyzer {
             }
         }
 
+        ancestors.remove(&canonical_directory);
         Ok(())
     }
 }
@@ -987,225 +1116,5 @@ fn streams_equal<R1: Read, R2: Read>(a: R1, b: R2) -> std::io::Result<bool> {
         if buf_a[..read_a] != buf_b[..read_b] {
             return Ok(false);
         }
-    }
-}
-
-#[cfg(all(test, unix))]
-mod tests {
-    use super::*;
-    use std::os::unix::fs::symlink;
-
-    /// A temporary directory tree that is removed when the value is dropped.
-    struct TempTree {
-        root: PathBuf,
-    }
-
-    impl TempTree {
-        fn new(name: &str) -> TempTree {
-            let root =
-                std::env::temp_dir().join(format!("photo_sort_test_{}_{name}", std::process::id()));
-            let _ = fs::remove_dir_all(&root);
-            fs::create_dir_all(&root).expect("create temp dir");
-            TempTree { root }
-        }
-
-        fn path(&self) -> PathBuf {
-            self.root.clone()
-        }
-    }
-
-    impl Drop for TempTree {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.root);
-        }
-    }
-
-    fn touch(path: &Path) {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).expect("create parent dir");
-        }
-        fs::write(path, b"x").expect("write file");
-    }
-
-    fn analyzer(
-        source_dirs: Vec<PathBuf>,
-        target_dir: &Path,
-        dont_follow_symlinked_dirs: bool,
-        dont_follow_symlinked_files: bool,
-    ) -> Analyzer {
-        let settings = AnalyzerSettings {
-            analysis_type: AnalysisType::OnlyName,
-            exif_date_type: ExifDateType::Creation,
-            source_dirs,
-            target_dir: target_dir.to_path_buf(),
-            recursive_source: true,
-            dont_follow_symlinked_dirs,
-            dont_follow_symlinked_files,
-            file_format: "{name}.{ext}".to_string(),
-            nodate_file_format: "{name}.{ext}".to_string(),
-            unknown_file_format: None,
-            bracketed_file_format: None,
-            date_format: "%Y%m%d-%H%M%S".to_string(),
-            bracketing_formatting: BracketingFormattingPriority::First,
-            extensions: vec!["jpg".to_string()],
-            #[cfg(feature = "video")]
-            video_extensions: vec!["mp4".to_string()],
-            action_type: ActionMode::DryRun(ActualAction::Copy),
-            mkdir: false,
-            excluded_files: Vec::new(),
-            included_files: Vec::new(),
-        };
-        Analyzer::new(settings).expect("create analyzer")
-    }
-
-    fn find_files(analyzer: &Analyzer) -> Vec<PathBuf> {
-        let mut files = Vec::new();
-        let mut visited_paths = HashSet::new();
-        for source_dir in &analyzer.settings.source_dirs {
-            analyzer
-                .find_files_in_source(
-                    source_dir,
-                    analyzer.settings.recursive_source,
-                    &mut visited_paths,
-                    &mut files,
-                )
-                .expect("scan source dir");
-        }
-        files
-    }
-
-    #[test]
-    fn symlinked_dir_is_searched_only_once() {
-        let tree = TempTree::new("dedupe");
-        touch(&tree.path().join("real/photo.jpg"));
-
-        let alias = tree.path().join("alias");
-        symlink(tree.path().join("real"), &alias).expect("create symlink");
-
-        let analyzer = analyzer(
-            vec![tree.path().join("real"), alias],
-            &tree.path(),
-            false,
-            false,
-        );
-        let files = find_files(&analyzer);
-
-        assert_eq!(files.len(), 1);
-        assert!(files[0].ends_with("photo.jpg"));
-    }
-
-    #[test]
-    fn dont_follow_symlinked_dirs_skips_linked_dir() {
-        let tree = TempTree::new("no_follow_dir");
-        touch(&tree.path().join("scan/photo.jpg"));
-        touch(&tree.path().join("external/other.jpg"));
-        symlink(tree.path().join("external"), tree.path().join("scan/link"))
-            .expect("create symlink");
-
-        let scan = tree.path().join("scan");
-
-        let following = find_files(&analyzer(vec![scan.clone()], &tree.path(), false, false));
-        assert_eq!(following.len(), 2);
-
-        let not_following = find_files(&analyzer(vec![scan], &tree.path(), true, false));
-        assert_eq!(not_following.len(), 1);
-        assert!(not_following[0].ends_with("photo.jpg"));
-    }
-
-    #[test]
-    fn dont_follow_symlinked_files_skips_linked_file() {
-        let tree = TempTree::new("no_follow_file");
-        touch(&tree.path().join("scan/photo.jpg"));
-        touch(&tree.path().join("external/other.jpg"));
-        symlink(
-            tree.path().join("external/other.jpg"),
-            tree.path().join("scan/link.jpg"),
-        )
-        .expect("create symlink");
-
-        let scan = tree.path().join("scan");
-
-        let following = find_files(&analyzer(vec![scan.clone()], &tree.path(), false, false));
-        assert_eq!(following.len(), 2);
-
-        let not_following = find_files(&analyzer(vec![scan], &tree.path(), false, true));
-        assert_eq!(not_following.len(), 1);
-        assert!(not_following[0].ends_with("photo.jpg"));
-    }
-
-    #[test]
-    fn file_and_dir_flags_are_independent() {
-        let tree = TempTree::new("independent");
-        touch(&tree.path().join("scan/photo.jpg"));
-        touch(&tree.path().join("external/other.jpg"));
-        symlink(
-            tree.path().join("external/other.jpg"),
-            tree.path().join("scan/file_link.jpg"),
-        )
-        .expect("create file symlink");
-        symlink(
-            tree.path().join("external"),
-            tree.path().join("scan/dir_link"),
-        )
-        .expect("create dir symlink");
-
-        let scan = tree.path().join("scan");
-
-        // Skipping dir links keeps the file link, which points to the same file as the dir link.
-        let dirs_skipped = find_files(&analyzer(vec![scan.clone()], &tree.path(), true, false));
-        assert_eq!(dirs_skipped.len(), 2);
-
-        // Skipping file links keeps the dir link, so the other file is still reached.
-        let files_skipped = find_files(&analyzer(vec![scan], &tree.path(), false, true));
-        assert_eq!(files_skipped.len(), 2);
-    }
-
-    #[test]
-    fn symlinked_file_is_listed_only_once() {
-        let tree = TempTree::new("file_dedupe");
-        touch(&tree.path().join("scan/photo.jpg"));
-        symlink(
-            tree.path().join("scan/photo.jpg"),
-            tree.path().join("scan/link.jpg"),
-        )
-        .expect("create symlink");
-
-        for (dirs, files_flags) in [(false, false), (false, true), (true, false), (true, true)] {
-            let scan = tree.path().join("scan");
-            let files = find_files(&analyzer(vec![scan], &tree.path(), dirs, files_flags));
-
-            assert_eq!(files.len(), 1);
-            assert!(files[0].ends_with("photo.jpg"));
-        }
-    }
-
-    #[test]
-    fn symlink_cycle_does_not_recurse_endlessly() {
-        let tree = TempTree::new("cycle");
-        touch(&tree.path().join("a/b/photo.jpg"));
-        symlink(tree.path(), tree.path().join("a/b/back")).expect("create symlink");
-
-        let root = tree.path();
-        let files = find_files(&analyzer(vec![root], &tree.path(), false, false));
-
-        assert_eq!(files.len(), 1);
-        assert!(files[0].ends_with("photo.jpg"));
-    }
-
-    #[test]
-    fn broken_symlink_does_not_stop_the_scan() {
-        let tree = TempTree::new("broken_link");
-        touch(&tree.path().join("scan/photo.jpg"));
-        symlink(
-            tree.path().join("scan/missing.jpg"),
-            tree.path().join("scan/broken.jpg"),
-        )
-        .expect("create symlink");
-
-        let scan = tree.path().join("scan");
-        let files = find_files(&analyzer(vec![scan], &tree.path(), false, false));
-
-        assert_eq!(files.len(), 1);
-        assert!(files[0].ends_with("photo.jpg"));
     }
 }
