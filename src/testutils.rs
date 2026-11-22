@@ -8,6 +8,7 @@ use crate::analysis::exif2date::ExifDateType;
 use crate::analysis::name_formatters::BracketingFormattingPriority;
 use crate::{build_file_patterns, AnalysisType, Analyzer, AnalyzerSettings};
 use regex::Regex;
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -84,16 +85,49 @@ impl Drop for TempDir {
     }
 }
 
+/// Options for the [`analyzer_with`] helper.
+#[derive(Debug, Default)]
+pub struct AnalyzerOptions {
+    /// The source directories. An empty list means that the target directory
+    /// is the only source directory.
+    pub source_dirs: Vec<PathBuf>,
+    pub included_files: Vec<Regex>,
+    pub excluded_files: Vec<Regex>,
+    pub dont_follow_symlinked_dirs: bool,
+    pub dont_follow_symlinked_files: bool,
+}
+
 /// Builds an `Analyzer` for the source directory `root`.
 ///
 /// `root` is also used as the target directory.
 pub fn analyzer(root: &Path, included_files: Vec<Regex>, excluded_files: Vec<Regex>) -> Analyzer {
+    analyzer_with(
+        root,
+        AnalyzerOptions {
+            included_files,
+            excluded_files,
+            ..Default::default()
+        },
+    )
+}
+
+/// Builds an `Analyzer` for `root` with the given options.
+///
+/// `root` is used as the target directory.
+pub fn analyzer_with(root: &Path, options: AnalyzerOptions) -> Analyzer {
+    let source_dirs = if options.source_dirs.is_empty() {
+        vec![root.to_path_buf()]
+    } else {
+        options.source_dirs
+    };
     Analyzer::new(AnalyzerSettings {
         analysis_type: AnalysisType::OnlyName,
         exif_date_type: ExifDateType::Creation,
-        source_dirs: vec![root.to_path_buf()],
+        source_dirs,
         target_dir: root.to_path_buf(),
         recursive_source: true,
+        dont_follow_symlinked_dirs: options.dont_follow_symlinked_dirs,
+        dont_follow_symlinked_files: options.dont_follow_symlinked_files,
         file_format: String::new(),
         nodate_file_format: String::new(),
         unknown_file_format: None,
@@ -105,8 +139,8 @@ pub fn analyzer(root: &Path, included_files: Vec<Regex>, excluded_files: Vec<Reg
         video_extensions: Vec::new(),
         action_type: ActionMode::DryRun(ActualAction::Move),
         mkdir: false,
-        excluded_files,
-        included_files,
+        excluded_files: options.excluded_files,
+        included_files: options.included_files,
     })
     .expect("Failed to create analyzer")
 }
@@ -119,9 +153,10 @@ pub fn patterns(wildcards: &[&str]) -> Vec<Regex> {
 /// Scans the source directories of `analyzer` and returns the files sorted.
 pub fn find(analyzer: &Analyzer, recursive: bool) -> Vec<PathBuf> {
     let mut files = Vec::new();
+    let mut visited_paths = HashSet::new();
     for source in analyzer.settings.source_dirs.clone() {
         analyzer
-            .find_files_in_source(source, recursive, &mut files)
+            .find_files_in_source(source, recursive, &mut visited_paths, &mut files)
             .expect("Failed to scan source directory");
     }
     files.sort();

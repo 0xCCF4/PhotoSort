@@ -229,10 +229,11 @@ fn repeated_scan_adds_files_once() {
     let dir = nested_tree("repeated_scan");
     let analyzer = analyzer(dir.path(), Vec::new(), Vec::new());
     let mut files = Vec::new();
+    let mut visited_paths = std::collections::HashSet::new();
 
     for _ in 0..2 {
         analyzer
-            .find_files_in_source(dir.path(), true, &mut files)
+            .find_files_in_source(dir.path(), true, &mut visited_paths, &mut files)
             .expect("Failed to scan source directory");
     }
 

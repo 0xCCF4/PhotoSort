@@ -81,6 +81,8 @@ impl FromStr for AnalysisType {
 /// * `source_dirs` - A vector of `Path` references that represent the source directories to analyze.
 /// * `target_dir` - A `Path` reference that represents the target directory for the analysis results.
 /// * `recursive_source` - A boolean that indicates whether to analyze source directories recursively.
+/// * `dont_follow_symlinked_dirs` - A boolean that indicates whether symbolic links to directories are skipped during the recursive search.
+/// * `dont_follow_symlinked_files` - A boolean that indicates whether symbolic links to files are skipped.
 /// * `file_format` - A string that represents the target format of the files to analyze.
 /// * `nodate_file_format` - A string that represent the target format of files with no date.
 /// * `unknown_file_format` - An optional string that represents the target format of files not matching the list of extensions
@@ -98,6 +100,8 @@ pub struct AnalyzerSettings {
     pub source_dirs: Vec<PathBuf>,
     pub target_dir: PathBuf,
     pub recursive_source: bool,
+    pub dont_follow_symlinked_dirs: bool,
+    pub dont_follow_symlinked_files: bool,
     pub file_format: String,
     pub nodate_file_format: String,
     pub unknown_file_format: Option<String>,
@@ -191,7 +195,9 @@ static RE_DETECT_NAME_FORMAT_COMMAND: LazyLock<regex::Regex> = LazyLock::new(|| 
 
 static RE_COMMAND_SPLIT: LazyLock<regex::Regex> = LazyLock::new(|| {
     regex::Regex::new(
-        r"^(([^:]*):)?(.*)$", // splits command into modifiers:command
+        // splits command into modifiers:command; a colon after the "?" of a command
+        // argument (e.g. "date?%H:%M") belongs to the argument and is not a separator
+        r"^(([^:?]*):)?(.*)$",
     )
     .expect("Failed to compile regex")
 });
@@ -855,7 +861,7 @@ impl Analyzer {
                     .settings
                     .extensions
                     .iter()
-                    .any(|valid_ext| ext == valid_ext.as_str()))
+                    .any(|valid_ext| ext == valid_ext.to_lowercase()))
             }
         }
     }
@@ -884,7 +890,7 @@ impl Analyzer {
                     .settings
                     .video_extensions
                     .iter()
-                    .any(|valid_ext| ext == valid_ext.as_str()))
+                    .any(|valid_ext| ext == valid_ext.to_lowercase()))
             }
         }
     }
@@ -924,29 +930,41 @@ impl Analyzer {
     ///
     /// A file that the scan finds more than once, for example through a link and
     /// directly, is added to `result` once. The comparison uses the resolved
-    /// path, so two names of the same file count as one file.
+    /// path in `visited_paths`, so two names of the same file count as one file.
+    /// A directory that is reached by several routes is scanned for each route,
+    /// because the patterns can differ for each of them. A link that points to
+    /// one of its parent directories is skipped, so a link cycle ends.
     ///
     /// # Arguments
     /// * `directory`: The directory to search for files.
     /// * `recursive`: A boolean that indicates whether to search subdirectories.
+    /// * `visited_paths`: The set of resolved file paths that were already
+    ///   collected. It is shared across all source directories. Pass an empty set
+    ///   on start.
     /// * `result`: A mutable reference to a vector of `PathBuf` objects that will hold the results.
     ///
     /// # Errors
     /// This function will return an error if:
     /// * The directory cannot be read or other IO errors occur.
+    /// * The canonical path of the directory cannot be determined.
+    ///
+    /// A file whose canonical path cannot be determined (for example a symbolic link to a missing
+    /// target) is skipped with a warning. It does not stop the scan.
     pub fn find_files_in_source<P: AsRef<Path>>(
         &self,
         directory: P,
         recursive: bool,
+        visited_paths: &mut HashSet<PathBuf>,
         result: &mut Vec<PathBuf>,
     ) -> Result<()> {
-        let mut known = result.iter().cloned().collect::<HashSet<PathBuf>>();
+        let mut ancestors = HashSet::new();
         self.find_files_in_dir(
             directory.as_ref(),
             Path::new(""),
             recursive,
+            visited_paths,
+            &mut ancestors,
             result,
-            &mut known,
         )
     }
 
@@ -958,16 +976,28 @@ impl Analyzer {
     /// from the names of the directory entries. Following a link does not
     /// change this path.
     ///
-    /// `known` holds the resolved paths that are already in `result`. It keeps a
-    /// file that the scan finds several times in the result only once.
+    /// `visited_paths` holds the resolved file paths that are already in
+    /// `result`. `ancestors` holds the resolved paths of the directories on the
+    /// current path to the root. A link back to one of them causes endless
+    /// recursion, so the scan skips it.
     fn find_files_in_dir(
         &self,
         directory: &Path,
         relative_directory: &Path,
         recursive: bool,
+        visited_paths: &mut HashSet<PathBuf>,
+        ancestors: &mut HashSet<PathBuf>,
         result: &mut Vec<PathBuf>,
-        known: &mut HashSet<PathBuf>,
     ) -> Result<()> {
+        let canonical_directory = directory.canonicalize()?;
+        if !ancestors.insert(canonical_directory.clone()) {
+            debug!(
+                "Skipping symbolic link that points to a parent directory: {}",
+                directory.display()
+            );
+            return Ok(());
+        }
+
         let mut entries = fs::read_dir(directory)?.collect::<Vec<std::io::Result<DirEntry>>>();
         entries.sort_by(|a, b| match (a, b) {
             (Ok(a), Ok(b)) => a.path().cmp(&b.path()),
@@ -978,14 +1008,41 @@ impl Analyzer {
         for entry in entries {
             let entry = entry?;
             let path = entry.path();
+            let file_type = entry.file_type()?;
             let relative_path = relative_directory.join(entry.file_name());
-            if path.is_dir() {
+            let is_dir = if file_type.is_symlink() {
+                path.is_dir()
+            } else {
+                file_type.is_dir()
+            };
+            if is_dir {
                 if recursive {
+                    if file_type.is_symlink() && self.settings.dont_follow_symlinked_dirs {
+                        debug!("Skipping symbolic link to directory: {}", path.display());
+                        continue;
+                    }
                     debug!("Processing subfolder: {}", path.display());
-                    self.find_files_in_dir(&path, &relative_path, recursive, result, known)?;
+                    self.find_files_in_dir(
+                        &path,
+                        &relative_path,
+                        recursive,
+                        visited_paths,
+                        ancestors,
+                        result,
+                    )?;
                 }
             } else {
-                let path = path.canonicalize()?;
+                if file_type.is_symlink() && self.settings.dont_follow_symlinked_files {
+                    debug!("Skipping symbolic link to file: {}", path.display());
+                    continue;
+                }
+                let path = match path.canonicalize() {
+                    Ok(path) => path,
+                    Err(err) => {
+                        warn!("Skipping file {}: {err}", path.display());
+                        continue;
+                    }
+                };
                 let path_no_prefix = format!(
                     "{}{}",
                     std::path::MAIN_SEPARATOR_STR,
@@ -1015,13 +1072,18 @@ impl Analyzer {
                     exclude_it = exclude_it || matching;
                 }
 
-                if include_it && !exclude_it && known.insert(path.clone()) {
+                if include_it && !exclude_it {
+                    if !visited_paths.insert(path.clone()) {
+                        debug!("Skipping file that was already found: {}", path.display());
+                        continue;
+                    }
                     trace!(" -> Included file: {path:?}");
                     result.push(path);
                 }
             }
         }
 
+        ancestors.remove(&canonical_directory);
         Ok(())
     }
 }

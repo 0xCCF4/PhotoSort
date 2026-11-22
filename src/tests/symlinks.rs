@@ -7,7 +7,8 @@
 #![cfg(unix)]
 
 use crate::testutils::{
-    analyzer, find, nested_tree, path_pattern, patterns, relative, TempDir, ROOT_PHOTO, SUB_PHOTO,
+    analyzer, find, nested_tree, path_pattern, patterns, relative, TempDir, DEEP_PHOTO, ROOT_PHOTO,
+    SUB_PHOTO,
 };
 
 /// A linked directory inside the source tree is scanned and its files are
@@ -30,7 +31,7 @@ fn symlink_to_directory_inside_source_matches_visible_path() {
         vec![
             ROOT_PHOTO.to_string(),
             format!("sub/{SUB_PHOTO}"),
-            format!("sub/nested/{}", crate::testutils::DEEP_PHOTO),
+            format!("sub/nested/{DEEP_PHOTO}"),
         ]
     );
 
@@ -155,33 +156,4 @@ fn symlink_source_directory() {
         relative(&find(&analyzer, true), tree.path()),
         vec![ROOT_PHOTO.to_string()]
     );
-}
-
-/// A link loop terminates with an error instead of an endless scan.
-#[test]
-fn symlink_loop_returns_error() {
-    let dir = TempDir::new("symlink_loop");
-    dir.create_file(ROOT_PHOTO);
-    dir.symlink_dir(dir.path(), "loop");
-
-    let analyzer = analyzer(dir.path(), Vec::new(), Vec::new());
-    let mut files = Vec::new();
-    let result = analyzer.find_files_in_source(dir.path(), true, &mut files);
-
-    assert!(result.is_err());
-}
-
-/// A dangling link cannot be resolved and aborts the scan of the source
-/// directory. Files found before the error stay in the result.
-#[test]
-fn dangling_symlink_returns_error() {
-    let dir = TempDir::new("symlink_dangling");
-    dir.create_file(ROOT_PHOTO);
-    dir.symlink_file(std::path::Path::new("/nonexistent/photo.jpg"), "broken.jpg");
-
-    let analyzer = analyzer(dir.path(), Vec::new(), Vec::new());
-    let mut files = Vec::new();
-    let result = analyzer.find_files_in_source(dir.path(), true, &mut files);
-
-    assert!(result.is_err());
 }
