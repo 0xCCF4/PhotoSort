@@ -19,6 +19,10 @@ The documentation can be found here: <https://docs.rs/photo_sort>
 - **Move Mode**: Choose how you want to move the files to the target directory. Options are moving, coping, hardlinking,
   symlinking, or relative symlinking.
 - **Recursive Source Directory**: `PhotoSort` can search the source directories recursively.
+- **Symlink Handling**: By default, symbolic links to directories are followed during the recursive search.
+  A directory and a file are each processed only once, whatever path leads to them. Use
+  `--dont-follow-symlinked-dirs` or `--dont-follow-symlinked-files` to skip one kind of link, and
+  `--dont-follow-symlinks` to skip both.
 - **Dry Run Mode**: Test the tool without making any changes to your files. The tool will print the actions it would
   take without actually executing them.
 - **Sort photos and videos**: `PhotoSort` can sort both photos and videos by their metadata.
@@ -82,6 +86,16 @@ Options:
   
   -r, --recursive                      Whether to search the source directories recursively. If the flag is not set only
                                        immediate children of the source directories are considered
+                                       
+      --dont-follow-symlinks           If set, symbolic links are not followed at all: neither links to directories nor
+                                       links to files. This is the same as setting --dont-follow-symlinked-dirs and
+                                       --dont-follow-symlinked-files together
+                                       
+      --dont-follow-symlinked-dirs    If set, symbolic links to directories are not followed during the recursive search.
+                                       Directories and files that are reached more than once are processed only once
+                                       
+      --dont-follow-symlinked-files   If set, symbolic links to files are skipped. If the target of a skipped link is also
+                                       reached by a real path, that path is processed
                                        
       --date-format <DATE_FORMAT>      Date format string to use as default date format. See [https://docs.rs/chrono/latest/chrono/format/strftime/index.html]
                                        for more information [default: %Y%m%d-%H%M%S]
@@ -170,7 +184,7 @@ Options:
                                        `--include-regex`. Note that `--exclude` will take priority over `--include`, meaning that a
                                        file matching both an exclude and an include pattern will be excluded
 
-      --include_regex <INCLUDE_FILES_REGEX> Same as `--include` but accepts regular expressions instead of literals with wildcards. `*` and
+      --include-regex <INCLUDE_FILES_REGEX> Same as `--include` but accepts regular expressions instead of literals with wildcards. `*` and
                                        `**` wildcards do not work in the regex patterns but are interpreted as regex match the last pattern
                                        character 0 or more times. For a list of supported regex patterns, see <https://docs.rs/regex/latest/regex/#syntax>
 
@@ -244,17 +258,17 @@ or
 cargo install --git https://github.com/0xCCF4/PhotoSort
 ```
 
-or
+or, with Nix:
 
 ```bash
 nix run github:0xCCF4/PhotoSort -- <args>
 ```
 
-The `photo_sort` binary will then be available.
-
 For using the video sorting feature follow the instructions on <https://crates.io/crates/ffmpeg-next> and respective
 their wiki <https://github.com/zmwangx/rust-ffmpeg/wiki/Notes-on-building>. After installing the
 dependencies, you can install the `photo_sort` binary with the `video` feature enabled:
+
+The `video` feature needs rustc 1.88 or newer, because `ffmpeg-sys-next` uses let chains. 
 
 ```bash
 cargo install --features video photo_sort
@@ -270,6 +284,17 @@ cargo install --git https://github.com/0xCCF4/PhotoSort --features video
 
 Contributions to `PhotoSort` are welcome! If you have a feature request, bug report, or want to contribute to the code,
 please open an issue or a pull request.
+
+### Development
+
+The flake provides a development shell with the Rust toolchain, clippy, rustfmt, rust-analyzer
+and the ffmpeg dependencies of the `video` feature:
+
+```bash
+nix develop
+cargo build --features video
+cargo clippy --all-targets
+```
 
 ### Something works differently than expected?
 

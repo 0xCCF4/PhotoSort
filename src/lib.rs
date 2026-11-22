@@ -12,6 +12,7 @@ use chrono::NaiveDateTime;
 use log::{debug, error, info, trace, warn};
 use regex::Regex;
 use std::cmp::Ordering;
+use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::fs;
 use std::fs::{DirEntry, File};
@@ -55,9 +56,8 @@ impl FromStr for AnalysisType {
 
     fn from_str(s: &str) -> Result<Self> {
         match s.to_lowercase().as_str() {
-            "only_exif" | "exif" | "embedded" | "only_embedded" | "metadata" | "e" | "m" => {
-                Ok(AnalysisType::OnlyEmbedded)
-            }
+            "only_exif" | "exif" | "embedded" | "only_embedded" | "metadata" | "only_metadata"
+            | "e" | "m" => Ok(AnalysisType::OnlyEmbedded),
             "only_name" | "name" | "n" => Ok(AnalysisType::OnlyName),
             "exif_then_name" | "exif_name" | "embedded_then_name" | "metadata_then_name" | "mn"
             | "en" => Ok(AnalysisType::EmbeddedThenName),
@@ -76,6 +76,8 @@ impl FromStr for AnalysisType {
 /// * `source_dirs` - A vector of `Path` references that represent the source directories to analyze.
 /// * `target_dir` - A `Path` reference that represents the target directory for the analysis results.
 /// * `recursive_source` - A boolean that indicates whether to analyze source directories recursively.
+/// * `dont_follow_symlinked_dirs` - A boolean that indicates whether symbolic links to directories are skipped during the recursive search.
+/// * `dont_follow_symlinked_files` - A boolean that indicates whether symbolic links to files are skipped.
 /// * `file_format` - A string that represents the target format of the files to analyze.
 /// * `nodate_file_format` - A string that represent the target format of files with no date.
 /// * `unknown_file_format` - An optional string that represents the target format of files not matching the list of extensions
@@ -93,6 +95,8 @@ pub struct AnalyzerSettings {
     pub source_dirs: Vec<PathBuf>,
     pub target_dir: PathBuf,
     pub recursive_source: bool,
+    pub dont_follow_symlinked_dirs: bool,
+    pub dont_follow_symlinked_files: bool,
     pub file_format: String,
     pub nodate_file_format: String,
     pub unknown_file_format: Option<String>,
@@ -837,39 +841,78 @@ impl Analyzer {
 
     /// Finds all files in a source directory and its subdirectories.
     ///
+    /// Every directory and every file is processed only once. The canonical paths are recorded in
+    /// `visited_paths`. A path that is reached twice (for example through a symbolic link or
+    /// overlapping source directories) is skipped the second time. This also prevents endless
+    /// recursion on symlink cycles.
+    ///
     /// # Arguments
     /// * `directory` - The directory to search for files.
     /// * `recursive` - A boolean that indicates whether to search subdirectories.
+    /// * `visited_paths` - The set of canonical paths of directories and files that were already
+    ///   collected. It is shared across all source directories. Pass an empty set on start.
     /// * `result` - A mutable reference to a vector of `PathBuf` objects that will hold the results.
     ///
     /// # Errors
     /// This function will return an error if:
     /// * The directory cannot be read or other IO errors occur.
+    /// * The canonical path of the directory cannot be determined.
+    ///
+    /// A file whose canonical path cannot be determined (for example a symbolic link to a missing
+    /// target) is skipped with a warning. It does not stop the scan.
     pub fn find_files_in_source<P: AsRef<Path>>(
         &self,
         directory: P,
         recursive: bool,
+        visited_paths: &mut HashSet<PathBuf>,
         result: &mut Vec<PathBuf>,
     ) -> Result<()> {
-        let mut entries =
-            fs::read_dir(directory.as_ref())?.collect::<Vec<std::io::Result<DirEntry>>>();
+        let directory = directory.as_ref().canonicalize()?;
+        if !visited_paths.insert(directory.clone()) {
+            debug!(
+                "Skipping directory that was already searched: {}",
+                directory.display()
+            );
+            return Ok(());
+        }
+
+        let mut entries = fs::read_dir(&directory)?.collect::<Vec<std::io::Result<DirEntry>>>();
         entries.sort_by(|a, b| match (a, b) {
             (Ok(a), Ok(b)) => a.path().cmp(&b.path()),
             (Err(_), Ok(_)) => Ordering::Less,
             (Ok(_), Err(_)) => Ordering::Greater,
             (Err(_), Err(_)) => Ordering::Equal,
         });
-        let directory = directory.as_ref().canonicalize()?;
         for entry in entries {
             let entry = entry?;
             let path = entry.path();
-            if path.is_dir() {
+            let file_type = entry.file_type()?;
+            let is_dir = if file_type.is_symlink() {
+                path.is_dir()
+            } else {
+                file_type.is_dir()
+            };
+            if is_dir {
                 if recursive {
+                    if file_type.is_symlink() && self.settings.dont_follow_symlinked_dirs {
+                        debug!("Skipping symbolic link to directory: {}", path.display());
+                        continue;
+                    }
                     debug!("Processing subfolder: {}", path.display());
-                    self.find_files_in_source(path, recursive, result)?;
+                    self.find_files_in_source(&path, recursive, visited_paths, result)?;
                 }
             } else {
-                let path = path.canonicalize()?;
+                if file_type.is_symlink() && self.settings.dont_follow_symlinked_files {
+                    debug!("Skipping symbolic link to file: {}", path.display());
+                    continue;
+                }
+                let path = match path.canonicalize() {
+                    Ok(path) => path,
+                    Err(err) => {
+                        warn!("Skipping file {}: {err}", path.display());
+                        continue;
+                    }
+                };
                 let path_no_prefix = format!(
                     "{}{}",
                     std::path::MAIN_SEPARATOR_STR,
@@ -900,6 +943,10 @@ impl Analyzer {
                 }
 
                 if include_it && !exclude_it {
+                    if !visited_paths.insert(path.clone()) {
+                        debug!("Skipping file that was already found: {}", path.display());
+                        continue;
+                    }
                     trace!(" -> Included file: {path:?}");
                     result.push(path);
                 }
@@ -938,5 +985,225 @@ fn streams_equal<R1: Read, R2: Read>(a: R1, b: R2) -> std::io::Result<bool> {
         if buf_a[..read_a] != buf_b[..read_b] {
             return Ok(false);
         }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::symlink;
+
+    /// A temporary directory tree that is removed when the value is dropped.
+    struct TempTree {
+        root: PathBuf,
+    }
+
+    impl TempTree {
+        fn new(name: &str) -> TempTree {
+            let root =
+                std::env::temp_dir().join(format!("photo_sort_test_{}_{name}", std::process::id()));
+            let _ = fs::remove_dir_all(&root);
+            fs::create_dir_all(&root).expect("create temp dir");
+            TempTree { root }
+        }
+
+        fn path(&self) -> PathBuf {
+            self.root.clone()
+        }
+    }
+
+    impl Drop for TempTree {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.root);
+        }
+    }
+
+    fn touch(path: &Path) {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).expect("create parent dir");
+        }
+        fs::write(path, b"x").expect("write file");
+    }
+
+    fn analyzer(
+        source_dirs: Vec<PathBuf>,
+        target_dir: &Path,
+        dont_follow_symlinked_dirs: bool,
+        dont_follow_symlinked_files: bool,
+    ) -> Analyzer {
+        let settings = AnalyzerSettings {
+            analysis_type: AnalysisType::OnlyName,
+            exif_date_type: ExifDateType::Creation,
+            source_dirs,
+            target_dir: target_dir.to_path_buf(),
+            recursive_source: true,
+            dont_follow_symlinked_dirs,
+            dont_follow_symlinked_files,
+            file_format: "{name}.{ext}".to_string(),
+            nodate_file_format: "{name}.{ext}".to_string(),
+            unknown_file_format: None,
+            bracketed_file_format: None,
+            date_format: "%Y%m%d-%H%M%S".to_string(),
+            bracketing_formatting: BracketingFormattingPriority::First,
+            extensions: vec!["jpg".to_string()],
+            #[cfg(feature = "video")]
+            video_extensions: vec!["mp4".to_string()],
+            action_type: ActionMode::DryRun(ActualAction::Copy),
+            mkdir: false,
+            excluded_files: Vec::new(),
+            included_files: Vec::new(),
+        };
+        Analyzer::new(settings).expect("create analyzer")
+    }
+
+    fn find_files(analyzer: &Analyzer) -> Vec<PathBuf> {
+        let mut files = Vec::new();
+        let mut visited_paths = HashSet::new();
+        for source_dir in &analyzer.settings.source_dirs {
+            analyzer
+                .find_files_in_source(
+                    source_dir,
+                    analyzer.settings.recursive_source,
+                    &mut visited_paths,
+                    &mut files,
+                )
+                .expect("scan source dir");
+        }
+        files
+    }
+
+    #[test]
+    fn symlinked_dir_is_searched_only_once() {
+        let tree = TempTree::new("dedupe");
+        touch(&tree.path().join("real/photo.jpg"));
+
+        let alias = tree.path().join("alias");
+        symlink(tree.path().join("real"), &alias).expect("create symlink");
+
+        let analyzer = analyzer(
+            vec![tree.path().join("real"), alias],
+            &tree.path(),
+            false,
+            false,
+        );
+        let files = find_files(&analyzer);
+
+        assert_eq!(files.len(), 1);
+        assert!(files[0].ends_with("photo.jpg"));
+    }
+
+    #[test]
+    fn dont_follow_symlinked_dirs_skips_linked_dir() {
+        let tree = TempTree::new("no_follow_dir");
+        touch(&tree.path().join("scan/photo.jpg"));
+        touch(&tree.path().join("external/other.jpg"));
+        symlink(tree.path().join("external"), tree.path().join("scan/link"))
+            .expect("create symlink");
+
+        let scan = tree.path().join("scan");
+
+        let following = find_files(&analyzer(vec![scan.clone()], &tree.path(), false, false));
+        assert_eq!(following.len(), 2);
+
+        let not_following = find_files(&analyzer(vec![scan], &tree.path(), true, false));
+        assert_eq!(not_following.len(), 1);
+        assert!(not_following[0].ends_with("photo.jpg"));
+    }
+
+    #[test]
+    fn dont_follow_symlinked_files_skips_linked_file() {
+        let tree = TempTree::new("no_follow_file");
+        touch(&tree.path().join("scan/photo.jpg"));
+        touch(&tree.path().join("external/other.jpg"));
+        symlink(
+            tree.path().join("external/other.jpg"),
+            tree.path().join("scan/link.jpg"),
+        )
+        .expect("create symlink");
+
+        let scan = tree.path().join("scan");
+
+        let following = find_files(&analyzer(vec![scan.clone()], &tree.path(), false, false));
+        assert_eq!(following.len(), 2);
+
+        let not_following = find_files(&analyzer(vec![scan], &tree.path(), false, true));
+        assert_eq!(not_following.len(), 1);
+        assert!(not_following[0].ends_with("photo.jpg"));
+    }
+
+    #[test]
+    fn file_and_dir_flags_are_independent() {
+        let tree = TempTree::new("independent");
+        touch(&tree.path().join("scan/photo.jpg"));
+        touch(&tree.path().join("external/other.jpg"));
+        symlink(
+            tree.path().join("external/other.jpg"),
+            tree.path().join("scan/file_link.jpg"),
+        )
+        .expect("create file symlink");
+        symlink(
+            tree.path().join("external"),
+            tree.path().join("scan/dir_link"),
+        )
+        .expect("create dir symlink");
+
+        let scan = tree.path().join("scan");
+
+        // Skipping dir links keeps the file link, which points to the same file as the dir link.
+        let dirs_skipped = find_files(&analyzer(vec![scan.clone()], &tree.path(), true, false));
+        assert_eq!(dirs_skipped.len(), 2);
+
+        // Skipping file links keeps the dir link, so the other file is still reached.
+        let files_skipped = find_files(&analyzer(vec![scan], &tree.path(), false, true));
+        assert_eq!(files_skipped.len(), 2);
+    }
+
+    #[test]
+    fn symlinked_file_is_listed_only_once() {
+        let tree = TempTree::new("file_dedupe");
+        touch(&tree.path().join("scan/photo.jpg"));
+        symlink(
+            tree.path().join("scan/photo.jpg"),
+            tree.path().join("scan/link.jpg"),
+        )
+        .expect("create symlink");
+
+        for (dirs, files_flags) in [(false, false), (false, true), (true, false), (true, true)] {
+            let scan = tree.path().join("scan");
+            let files = find_files(&analyzer(vec![scan], &tree.path(), dirs, files_flags));
+
+            assert_eq!(files.len(), 1);
+            assert!(files[0].ends_with("photo.jpg"));
+        }
+    }
+
+    #[test]
+    fn symlink_cycle_does_not_recurse_endlessly() {
+        let tree = TempTree::new("cycle");
+        touch(&tree.path().join("a/b/photo.jpg"));
+        symlink(tree.path(), tree.path().join("a/b/back")).expect("create symlink");
+
+        let root = tree.path();
+        let files = find_files(&analyzer(vec![root], &tree.path(), false, false));
+
+        assert_eq!(files.len(), 1);
+        assert!(files[0].ends_with("photo.jpg"));
+    }
+
+    #[test]
+    fn broken_symlink_does_not_stop_the_scan() {
+        let tree = TempTree::new("broken_link");
+        touch(&tree.path().join("scan/photo.jpg"));
+        symlink(
+            tree.path().join("scan/missing.jpg"),
+            tree.path().join("scan/broken.jpg"),
+        )
+        .expect("create symlink");
+
+        let scan = tree.path().join("scan");
+        let files = find_files(&analyzer(vec![scan], &tree.path(), false, false));
+
+        assert_eq!(files.len(), 1);
+        assert!(files[0].ends_with("photo.jpg"));
     }
 }
