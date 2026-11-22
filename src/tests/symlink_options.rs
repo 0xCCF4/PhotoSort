@@ -171,3 +171,18 @@ fn broken_symlink_does_not_stop_the_scan() {
     assert_eq!(files.len(), 1);
     assert!(files[0].ends_with(ROOT_PHOTO));
 }
+
+/// Two directories that link to each other do not recurse endlessly.
+#[test]
+fn mutual_symlinks_do_not_recurse_endlessly() {
+    let dir = TempDir::new("symlink_mutual");
+    dir.create_file(&format!("a/{ROOT_PHOTO}"));
+    dir.create_file(&format!("b/{SUB_PHOTO}"));
+    dir.symlink_dir(&dir.path().join("b"), "a/to_b");
+    dir.symlink_dir(&dir.path().join("a"), "b/to_a");
+
+    let analyzer = analyzer(dir.path(), Vec::new(), Vec::new());
+    let files = find(&analyzer, true);
+
+    assert_eq!(files.len(), 2);
+}
