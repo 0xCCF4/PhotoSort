@@ -7,7 +7,8 @@
 #![cfg(unix)]
 
 use crate::testutils::{
-    analyzer, analyzer_with, find, AnalyzerOptions, TempDir, ROOT_PHOTO, SUB_PHOTO,
+    analyzer, analyzer_with, find, path_pattern, patterns, AnalyzerOptions, TempDir, ROOT_PHOTO,
+    SUB_PHOTO,
 };
 
 /// A linked directory that is also a source directory is scanned once.
@@ -185,4 +186,49 @@ fn mutual_symlinks_do_not_recurse_endlessly() {
     let files = find(&analyzer, true);
 
     assert_eq!(files.len(), 2);
+}
+
+/// A file that several routes reach is collected when one route is not
+/// excluded. An excluded route records nothing, so it does not hide the file.
+#[test]
+fn an_excluded_route_does_not_hide_an_included_route() {
+    let dir = TempDir::new("symlink_excluded_routes");
+    dir.create_file(&format!("sub/{SUB_PHOTO}"));
+    dir.symlink_dir(&dir.path().join("sub"), "dir1");
+    dir.symlink_dir(&dir.path().join("sub"), "dir2");
+    dir.symlink_dir(&dir.path().join("sub"), "dir3");
+
+    let excluded = patterns(&[
+        &path_pattern(&["dir1", "**"]),
+        &path_pattern(&["dir2", "**"]),
+        &path_pattern(&["sub", "**"]),
+    ]);
+    let analyzer = analyzer(dir.path(), Vec::new(), excluded);
+    let files = find(&analyzer, true);
+
+    assert_eq!(files.len(), 1);
+    assert!(files[0].ends_with(SUB_PHOTO));
+}
+
+/// A file that two included routes reach is collected once.
+#[test]
+fn repeated_included_routes_add_the_file_once() {
+    let dir = TempDir::new("symlink_repeated_included");
+    dir.create_file(&format!("sub/{SUB_PHOTO}"));
+    for link in ["x1", "x2", "x3", "y1", "y2"] {
+        dir.symlink_dir(&dir.path().join("sub"), link);
+    }
+
+    // `sub` and `x1` to `x3` are excluded, `y1` and `y2` are included.
+    let excluded = patterns(&[
+        &path_pattern(&["sub", "**"]),
+        &path_pattern(&["x1", "**"]),
+        &path_pattern(&["x2", "**"]),
+        &path_pattern(&["x3", "**"]),
+    ]);
+    let analyzer = analyzer(dir.path(), Vec::new(), excluded);
+    let files = find(&analyzer, true);
+
+    assert_eq!(files.len(), 1);
+    assert!(files[0].ends_with(SUB_PHOTO));
 }
