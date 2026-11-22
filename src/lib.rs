@@ -6,6 +6,8 @@ use crate::analysis::exif2date::ExifDateType;
 use crate::analysis::name_formatters::{
     BracketInfo, BracketingFormattingPriority, FileType, NameFormatterInvocationInfo,
 };
+#[cfg(feature = "video")]
+use crate::analysis::video2date::VideoTimeZone;
 use action::ActionMode;
 use anyhow::{anyhow, Result};
 use chrono::NaiveDateTime;
@@ -88,6 +90,7 @@ impl FromStr for AnalysisType {
 /// * `unknown_file_format` - An optional string that represents the target format of files not matching the list of extensions
 /// * `date_format` - A string that represents the format of the dates in the files to analyze.
 /// * `extensions` - A vector of strings that represent the file extensions to consider during analysis.
+/// * `video_time_zone` - How to interpret the creation time of a video file. See [`VideoTimeZone`] for details.
 /// * `action_type` - An `ActionMode` that specifies the type of action to perform on a file after analysis.
 /// * `mkdir` - A boolean that indicates whether to create the target directory if it does not exist.
 /// * `excluded_files` - A list of regexes to check if a file should be excluded from analysis.
@@ -109,6 +112,8 @@ pub struct AnalyzerSettings {
     pub date_format: String,
     pub bracketing_formatting: BracketingFormattingPriority,
     pub extensions: Vec<String>,
+    #[cfg(feature = "video")]
+    pub video_time_zone: VideoTimeZone,
     #[cfg(feature = "video")]
     pub video_extensions: Vec<String>,
     pub action_type: ActionMode,
@@ -309,8 +314,9 @@ impl Analyzer {
     }
 
     #[cfg(feature = "video")]
-    fn analyze_video_metadata<P: AsRef<Path>>(path: P) -> Result<Option<NaiveDateTime>> {
-        let video_time = analysis::video2date::get_video_time(path)?;
+    fn analyze_video_metadata<P: AsRef<Path>>(&self, path: P) -> Result<Option<NaiveDateTime>> {
+        let video_time =
+            analysis::video2date::get_video_time_with_zone(path, self.settings.video_time_zone)?;
         Ok(video_time)
     }
 
@@ -334,7 +340,7 @@ impl Analyzer {
         }
         #[cfg(feature = "video")]
         if video {
-            return Analyzer::analyze_video_metadata(path);
+            return self.analyze_video_metadata(path);
         }
 
         Err(anyhow::anyhow!("File extension is not valid"))

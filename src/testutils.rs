@@ -136,6 +136,8 @@ pub fn analyzer_with(root: &Path, options: AnalyzerOptions) -> Analyzer {
         bracketing_formatting: BracketingFormattingPriority::default(),
         extensions: Vec::new(),
         #[cfg(feature = "video")]
+        video_time_zone: crate::analysis::video2date::VideoTimeZone::default(),
+        #[cfg(feature = "video")]
         video_extensions: Vec::new(),
         action_type: ActionMode::DryRun(ActualAction::Move),
         mkdir: false,
