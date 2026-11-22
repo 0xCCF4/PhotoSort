@@ -10,7 +10,7 @@ use photo_sort::analysis::exif2date::ExifDateType;
 use photo_sort::analysis::name_formatters::{BracketInfo, BracketingFormattingPriority};
 use photo_sort::{action, AnalysisType, Analyzer, BracketEXIFInformation};
 use regex::{Regex, RegexBuilder};
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -30,18 +30,30 @@ format string."
 #[allow(clippy::struct_excessive_bools)]
 struct Arguments {
     /// The source directory to read the photos from.
-    #[arg(short, long, num_args = 1.., required = true)]
+    #[arg(short, long, alias = "source_dir", num_args = 1.., required = true)]
     source_dir: Vec<String>,
     /// The target directory to write the sorted photos to.
-    #[arg(short, long)]
+    #[arg(short, long, alias = "target_dir")]
     target_dir: String,
     /// Whether to search the source directories recursively.
     /// If the flag is not set only immediate children of the source directories are considered.
     #[arg(short, long, default_value = "false")]
     recursive: bool,
+    /// If set, symbolic links are not followed at all: neither links to directories nor links to files.
+    /// This is the same as setting `--dont-follow-symlinked-dirs` and `--dont-follow-symlinked-files` together.
+    #[arg(long, alias = "dont_follow_symlinks", default_value = "false")]
+    dont_follow_symlinks: bool,
+    /// If set, symbolic links to directories are not followed during the recursive search.
+    /// If a linked directory is also reached by a real path, its files are processed from that path only.
+    #[arg(long, alias = "dont_follow_symlinked_dirs", default_value = "false")]
+    dont_follow_symlinked_dirs: bool,
+    /// If set, symbolic links to files are skipped. If the target of a skipped link is also reached by a
+    /// real path, that path is processed.
+    #[arg(long, alias = "dont_follow_symlinked_files", default_value = "false")]
+    dont_follow_symlinked_files: bool,
     /// Date format string to use as default date format.
     /// See <https://docs.rs/chrono/latest/chrono/format/strftime/index.html> for more information.
-    #[arg(long, default_value = "%Y%m%d-%H%M%S")]
+    #[arg(long, alias = "date_format", default_value = "%Y%m%d-%H%M%S")]
     date_format: String,
     /// The target file format. Everything outside a {...} block is copied as is. The target file format may contain "/" to
     /// indicate that the file should be placed in a subdirectory. Use the `--mkdir` flag to create the subdirectories.
@@ -58,7 +70,12 @@ struct Arguments {
     ///      leaving out `?...` or using `copy` copies the original file extension.
     /// Commands of the form {label:cmd} are replaced by {cmd}; if the replacement string is not empty then a prefix of "label" is added.
     /// This might be useful to add separators only if there is e.g. a {dup} part.
-    #[arg(short, long, default_value = "{type}{_:date}{-:name}{-:dup}.{ext}")]
+    #[arg(
+        short,
+        long,
+        alias = "file_format",
+        default_value = "{type}{_:date}{-:name}{-:dup}.{ext}"
+    )]
     file_format: String,
     /// The target format for files that have no date. The `analysis_mode` allows specifying which method
     /// should be used to derive a date for a file. See the `file_format` option for an extensive description of possible
@@ -83,10 +100,10 @@ struct Arguments {
     exclude_files: Vec<String>,
     /// Same as `--exclude` but accepts regular expressions instead of literals with wildcards. `*` and `**` wildcards do not work in the regex patterns but
     /// are interpreted as regex match the last pattern character 0 or more times. For a list of supported regex patterns, see <https://docs.rs/regex/latest/regex/#syntax>
-    #[arg(long = "exclude-regex")]
+    #[arg(long = "exclude-regex", alias = "exclude_regex")]
     exclude_files_regex: Vec<String>,
     /// When set the exclude pattern to do not ignore upper/lower case.
-    #[arg(long)]
+    #[arg(long, alias = "exclude_case")]
     exclude_case: bool,
     /// When set to any, all files are by default ignored, only files matching any pattern provided via `--include` or `--include-regex` argument
     /// are analysed. See `--exclude` for an explanation of supported patterns. To enable case matching set `--include-case`. To specify regex
@@ -98,7 +115,7 @@ struct Arguments {
     #[arg(long = "include-regex", alias = "include_regex")]
     include_files_regex: Vec<String>,
     /// When set the include pattern to do not ignore upper/lower case.
-    #[arg(long)]
+    #[arg(long, alias = "include_case")]
     include_case: bool,
     /// The target file format for files that can be identified as bracketed photo set with different exposure levels. By using `--bracket` all
     /// files identified as bracketed are moved/renamed/copied with the specified format string instead of the default one specified by `--target-dir`.
@@ -118,7 +135,7 @@ struct Arguments {
     /// when the date changes between shots, if using the respective date information of each file (`current` mode). Using the `first`/`last` mode
     /// changes the data source for intermediary directory formatting (except final file name) to use the date information of the first respective
     /// last image in the bracketing sequence, hence keeping files of the same bracket group together in the same subdirectory.
-    #[arg(long = "bracket-fmt", default_value = "first")]
+    #[arg(long = "bracket-fmt", alias = "bracket_fmt", default_value = "first")]
     bracketing_formatting_priority: BracketingFormattingPriority,
     /// If the file format contains a "/", indicating that the file should be placed in a subdirectory,
     /// the mkdir flag controls if the tool is allowed to create non-existing subdirectories. No folder is created in dry-run mode.
@@ -129,17 +146,22 @@ struct Arguments {
     extensions: Vec<String>,
     #[cfg(feature = "video")]
     /// A comma separated list of video extensions to include in the analysis.
-    #[arg(long, default_value = "mp4,mov,avi", value_delimiter = ',', num_args = 0..)]
+    #[arg(long, alias = "video_extensions", default_value = "mp4,mov,avi", value_delimiter = ',', num_args = 0..)]
     video_extensions: Vec<String>,
     #[cfg(not(feature = "video"))]
     /// The sorting mode, possible values are `name_then_exif`, `exif_then_name`, `only_name`, `only_exif`.
     /// Name analysis tries to extract the date from the file name, Exif analysis tries to extract the date from the EXIF data.
-    #[arg(short, long, default_value = "exif_then_name")]
+    #[arg(short, long, alias = "analysis_mode", default_value = "exif_then_name")]
     analysis_mode: AnalysisType,
     #[cfg(feature = "video")]
     /// The sorting mode, possible values are `name_then_metadata`, `metadata_then_name`, `only_name`, `only_metadata`.
     /// Name analysis tries to extract the date from the file name, Metadata analysis tries to extract the date from the EXIF data/video metadata.
-    #[arg(short, long, default_value = "metadata_then_name")]
+    #[arg(
+        short,
+        long,
+        alias = "analysis_mode",
+        default_value = "metadata_then_name"
+    )]
     analysis_mode: AnalysisType,
     /// The EXIF date field to use, possible values are `modify`, `creation`, `digitized`. EXIF data contains several date fields.
     /// `Modify` is the modification date, which is updated when the file is edited.
@@ -147,15 +169,15 @@ struct Arguments {
     /// `Digitize` is the digitized date, which is the date when the photo was digitized (for example, when converting a film photo to a digital image).
     /// For digital cameras, this is usually the same as the creation date.
     /// The default is `create`.
-    #[arg(long = "date-field", default_value = "create")]
+    #[arg(long = "date-field", alias = "date_field", default_value = "create")]
     exif_date_type: ExifDateType,
     /// The action mode, possible values are `move`, `copy`, `hardlink`, `relative_symlink`, `absolute_symlink`.
     /// `Move` will move the files, `Copy` will copy the files, `Hardlink` (alias: `hard`) will create hardlinks, `RelativeSymlink` (alias: `relsym`) will create relative symlinks, `AbsoluteSymlink` (alias: `abssym`) will create absolute symlinks.
-    #[arg(short, long, default_value = "move")]
+    #[arg(short, long, alias = "move_mode", default_value = "move")]
     move_mode: action::ActualAction,
     /// Dry-run
     /// If set, the tool will not move any files but only print the actions it would take.
-    #[arg(short = 'n', long, default_value = "false")]
+    #[arg(short = 'n', long, alias = "dry_run", default_value = "false")]
     dry_run: bool,
     /// Be verbose, if set, the tool will print more information about the actions it takes.
     #[arg(short, long, default_value = "false")]
@@ -429,6 +451,8 @@ pub fn main() {
         source_dirs: args.source_dir.iter().map(PathBuf::from).collect(),
         target_dir: PathBuf::from(args.target_dir.as_str()),
         recursive_source: args.recursive,
+        dont_follow_symlinked_dirs: args.dont_follow_symlinks || args.dont_follow_symlinked_dirs,
+        dont_follow_symlinked_files: args.dont_follow_symlinks || args.dont_follow_symlinked_files,
         file_format: args.file_format.clone(),
         nodate_file_format: args.nodate_file_format.unwrap_or(args.file_format.clone()),
         unknown_file_format: args.unknown_file_format,
@@ -475,12 +499,14 @@ pub fn main() {
     debug!("Running program");
 
     let mut files = Vec::new();
+    let mut visited_paths = HashSet::new();
 
     for source_dir in &analyzer.settings.source_dirs {
         info!("Processing source folder: {}", source_dir.display());
         let result = analyzer.find_files_in_source(
             source_dir.clone(),
             analyzer.settings.recursive_source,
+            &mut visited_paths,
             &mut files,
         );
         if let Err(err) = result {
