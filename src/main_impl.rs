@@ -8,8 +8,7 @@ use log::{debug, error, info, trace, warn, LevelFilter};
 use photo_sort::analysis::bracketed::get_bracketing_info;
 use photo_sort::analysis::exif2date::ExifDateType;
 use photo_sort::analysis::name_formatters::{BracketInfo, BracketingFormattingPriority};
-#[cfg(feature = "video")]
-use photo_sort::analysis::video2date::VideoTimeZone;
+use photo_sort::analysis::time_zone::TimeZone;
 use photo_sort::{action, build_file_patterns, AnalysisType, Analyzer, BracketEXIFInformation};
 use regex::Regex;
 use std::collections::{HashSet, VecDeque};
@@ -155,20 +154,24 @@ struct Arguments {
     /// A comma separated list of video extensions to include in the analysis.
     #[arg(long, alias = "video_extensions", default_value = "mp4,mov,avi", value_delimiter = ',', num_args = 0..)]
     video_extensions: Vec<String>,
-    #[cfg(feature = "video")]
-    /// How to interpret the creation time of a video.
-    /// `auto` uses the time zone information that the file carries: the creation date of Apple devices wins,
-    /// which holds the local time with its UTC offset, and files from Android devices are treated as UTC.
-    /// Other files are used as written. `local` uses the value as written, `utc` treats the value as UTC
-    /// and converts it to the local time of this computer. A fixed offset such as `+02:00` treats the value
-    /// as UTC and converts it to that offset.
+    /// The time zone to assume when a file states no offset. When the file does not provide
+    /// such an offset, this value is used. `local` is the local time of this computer, `utc` is
+    /// UTC, and a fixed offset such as `+02:00` is the time in that offset.
     #[arg(
         long,
+        alias = "time_zone",
+        alias = "video-time-zone",
         alias = "video_time_zone",
-        default_value = "auto",
+        default_value = "local",
         allow_hyphen_values = true
     )]
-    video_time_zone: VideoTimeZone,
+    time_zone: TimeZone,
+    /// The time zone that the file names show. `local` shows the local time of this computer, `utc`
+    /// shows UTC, and a fixed offset such as `+02:00` shows the time in that offset. The date of the
+    /// file is read first, then it is converted to this zone. Without this option, the value of
+    /// `--time-zone` is used.
+    #[arg(long, alias = "output_time_zone", allow_hyphen_values = true)]
+    output_time_zone: Option<TimeZone>,
     #[cfg(not(feature = "video"))]
     /// The sorting mode, possible values are `name_then_exif`, `exif_then_name`, `only_name`, `only_exif`.
     /// Name analysis tries to extract the date from the file name, Exif analysis tries to extract the date from the EXIF data.
@@ -469,8 +472,8 @@ pub fn main() {
         } else {
             action::ActionMode::Execute(args.move_mode)
         },
-        #[cfg(feature = "video")]
-        video_time_zone: args.video_time_zone,
+        time_zone: args.time_zone,
+        output_time_zone: args.output_time_zone.unwrap_or(args.time_zone),
         #[cfg(feature = "video")]
         video_extensions: args.video_extensions.clone(),
         excluded_files: excluded_files_regexes,

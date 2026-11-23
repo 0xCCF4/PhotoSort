@@ -1,8 +1,9 @@
 //! Tests for the video date analysis and the interpretation of its time zone.
 #![cfg(feature = "video")]
 
-use chrono::{Duration, FixedOffset, Local, NaiveDate, NaiveDateTime, TimeZone, Utc};
-use photo_sort::analysis::video2date::{get_video_time, get_video_time_with_zone, VideoTimeZone};
+use chrono::{Duration, FixedOffset, Local, NaiveDate, NaiveDateTime, TimeZone as _, Utc};
+use photo_sort::analysis::time_zone::{TimeZone, ZonedDateTime};
+use photo_sort::analysis::video2date::get_video_time;
 use photo_sort::testutils::TempDir;
 use std::fs;
 use std::path::PathBuf;
@@ -122,45 +123,24 @@ fn time(hour: u32) -> NaiveDateTime {
         .expect("valid time")
 }
 
-/// Returns the local time that a UTC value denotes on this computer.
-fn as_local(time: NaiveDateTime) -> NaiveDateTime {
-    Utc.from_utc_datetime(&time)
-        .with_timezone(&Local)
-        .naive_local()
+/// Returns the instant of a zoned value as a naive UTC value.
+fn utc(time: ZonedDateTime) -> NaiveDateTime {
+    time.with_timezone(&Utc).naive_utc()
 }
 
-fn offset(hours: i32) -> FixedOffset {
+/// Returns the naive UTC value that a local time on this computer denotes.
+fn as_utc(time: NaiveDateTime) -> NaiveDateTime {
+    Local
+        .from_local_datetime(&time)
+        .earliest()
+        .expect("valid local time")
+        .with_timezone(&Utc)
+        .naive_utc()
+}
+
+/// Returns a fixed offset in hours.
+fn fixed(hours: i32) -> FixedOffset {
     FixedOffset::east_opt(hours * 3600).expect("valid offset")
-}
-
-#[test]
-fn parses_time_zones() {
-    let parse = |value: &str| value.parse::<VideoTimeZone>().expect("valid time zone");
-    assert_eq!(parse("auto"), VideoTimeZone::Auto);
-    assert_eq!(parse("LOCAL"), VideoTimeZone::Local);
-    assert_eq!(parse("utc"), VideoTimeZone::Utc);
-    assert_eq!(parse("+02:00"), VideoTimeZone::Fixed(offset(2)));
-    assert_eq!(parse("+0200"), VideoTimeZone::Fixed(offset(2)));
-    assert_eq!(parse("-05"), VideoTimeZone::Fixed(offset(-5)));
-    assert_eq!(parse("+00:00"), VideoTimeZone::Fixed(offset(0)));
-    for invalid in ["yesterday", "02:00", "+25:00", "+02:75", "+"] {
-        assert!(
-            invalid.parse::<VideoTimeZone>().is_err(),
-            "{invalid} should not parse"
-        );
-    }
-}
-
-#[test]
-fn resolves_auto() {
-    assert_eq!(VideoTimeZone::Auto.resolve(true), VideoTimeZone::Utc);
-    assert_eq!(VideoTimeZone::Auto.resolve(false), VideoTimeZone::Local);
-    assert_eq!(VideoTimeZone::Local.resolve(true), VideoTimeZone::Local);
-    assert_eq!(VideoTimeZone::Utc.resolve(false), VideoTimeZone::Utc);
-    assert_eq!(
-        VideoTimeZone::Fixed(offset(2)).resolve(true),
-        VideoTimeZone::Fixed(offset(2))
-    );
 }
 
 #[test]
@@ -175,44 +155,39 @@ fn uses_the_creation_date_of_apple_devices() {
             "2023-06-16T00:30:00+0200",
         )],
     );
-    let expected = NaiveDate::from_ymd_opt(2023, 6, 16)
-        .expect("valid date")
-        .and_hms_opt(0, 30, 0)
-        .expect("valid time");
+    let result = get_video_time(&path, TimeZone::Local)
+        .expect("Failed to read video")
+        .expect("date in the metadata");
+    assert_eq!(utc(result), time(22));
     assert_eq!(
-        get_video_time(&path).expect("Failed to read video"),
-        Some(expected)
+        *result.offset(),
+        FixedOffset::east_opt(2 * 3600).expect("valid offset")
     );
-    // The creation date is unambiguous, so it wins in every mode.
-    for zone in [
-        VideoTimeZone::Auto,
-        VideoTimeZone::Local,
-        VideoTimeZone::Utc,
-        VideoTimeZone::Fixed(offset(-7)),
-    ] {
-        assert_eq!(
-            get_video_time_with_zone(&path, zone).expect("Failed to read video"),
-            Some(expected),
-            "zone {zone}"
-        );
+    // The creation date is unambiguous, so it wins over every ingest zone.
+    for zone in [TimeZone::Local, TimeZone::Utc, TimeZone::Fixed(fixed(2))] {
+        let result = get_video_time(&path, zone)
+            .expect("Failed to read video")
+            .expect("date in the metadata");
+        assert_eq!(utc(result), time(22), "zone {zone}");
     }
 }
 
 #[test]
 fn parses_the_creation_date_of_apple_devices() {
     let dir = TempDir::new("video_apple_forms");
-    let expected = NaiveDate::from_ymd_opt(2023, 6, 16)
+    // The local time of the creation date in the test values without an offset.
+    let expected_local = NaiveDate::from_ymd_opt(2023, 6, 16)
         .expect("valid date")
         .and_hms_opt(0, 30, 0)
         .expect("valid time");
     let cases = [
-        ("2023-06-16T00:30:00+0200", Some(expected)),
-        ("2023-06-16T00:30:00+02:00", Some(expected)),
+        ("2023-06-16T00:30:00+0200", Some(time(22))),
+        ("2023-06-16T00:30:00+02:00", Some(time(22))),
         ("2023-06-15T22:30:00Z", Some(time(22))),
-        ("2023-06-16T00:30:00", Some(expected)),
+        ("2023-06-16T00:30:00", Some(as_utc(expected_local))),
         (
             "2023-06-16T00:30:00.123456789+0200",
-            Some(expected + Duration::nanoseconds(123_456_789)),
+            Some(time(22) + Duration::nanoseconds(123_456_789)),
         ),
         ("not a date", None),
     ];
@@ -223,11 +198,13 @@ fn parses_the_creation_date_of_apple_devices() {
             time(22),
             &[("com.apple.quicktime.creationdate", value)],
         );
-        let result = get_video_time(&path).expect("Failed to read video");
+        let result = get_video_time(&path, TimeZone::Local)
+            .expect("Failed to read video")
+            .expect("date in the metadata");
         match expected {
-            Some(expected) => assert_eq!(result, Some(*expected), "value {value}"),
+            Some(expected) => assert_eq!(utc(result), *expected, "value {value}"),
             // A value without a date falls back to the container time.
-            None => assert_eq!(result, Some(time(22)), "value {value}"),
+            None => assert_eq!(utc(result), as_utc(time(22)), "value {value}"),
         }
     }
 }
@@ -244,37 +221,37 @@ fn treats_videos_of_android_devices_as_utc() {
             ("com.android.model", "Pixel 7"),
         ],
     );
-    assert_eq!(
-        get_video_time(&path).expect("Failed to read video"),
-        Some(as_local(time(22)))
-    );
-    assert_eq!(
-        get_video_time_with_zone(&path, VideoTimeZone::Local).expect("Failed to read video"),
-        Some(time(22))
-    );
-    assert_eq!(
-        get_video_time_with_zone(&path, VideoTimeZone::Fixed(offset(2)))
-            .expect("Failed to read video"),
-        Some(time(22) + Duration::hours(2))
-    );
+    // The ingest zone does not matter, an Android device writes UTC.
+    for zone in [TimeZone::Local, TimeZone::Utc, TimeZone::Fixed(fixed(5))] {
+        let result = get_video_time(&path, zone)
+            .expect("Failed to read video")
+            .expect("date in the metadata");
+        assert_eq!(utc(result), time(22), "zone {zone}");
+        assert_eq!(*result.offset(), fixed(0), "zone {zone}");
+    }
 }
 
 #[test]
-fn keeps_the_written_time_of_cameras() {
+fn reads_the_written_time_of_cameras_in_the_ingest_zone() {
     let dir = TempDir::new("video_camera");
     let path = write_video(&dir, "camera.mp4", time(18), &[]);
     assert_eq!(
-        get_video_time(&path).expect("Failed to read video"),
-        Some(time(18))
+        utc(get_video_time(&path, TimeZone::Local)
+            .expect("Failed to read video")
+            .expect("date in the metadata")),
+        as_utc(time(18))
     );
     assert_eq!(
-        get_video_time_with_zone(&path, VideoTimeZone::Fixed(offset(2)))
-            .expect("Failed to read video"),
-        Some(time(18) + Duration::hours(2))
+        utc(get_video_time(&path, TimeZone::Utc)
+            .expect("Failed to read video")
+            .expect("date in the metadata")),
+        time(18)
     );
     assert_eq!(
-        get_video_time_with_zone(&path, VideoTimeZone::Utc).expect("Failed to read video"),
-        Some(as_local(time(18)))
+        utc(get_video_time(&path, TimeZone::Fixed(fixed(2)))
+            .expect("Failed to read video")
+            .expect("date in the metadata")),
+        time(18) - Duration::hours(2)
     );
 }
 
@@ -287,5 +264,8 @@ fn returns_none_without_a_creation_time() {
         &[b"mp42".as_slice(), &512u32.to_be_bytes(), b"mp42isom"].concat(),
     );
     fs::write(&path, [ftyp, be_box(b"moov", &[])].concat()).expect("Failed to write test video");
-    assert_eq!(get_video_time(&path).expect("Failed to read video"), None);
+    assert_eq!(
+        get_video_time(&path, TimeZone::Local).expect("Failed to read video"),
+        None
+    );
 }
