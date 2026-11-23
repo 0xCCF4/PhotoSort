@@ -1,4 +1,8 @@
 //! Tests for the EXIF date analysis and the interpretation of its time zone.
+//!
+//! The tests that read a photo need the photos in `tests/src`, which are not part
+//! of the repository. They are ignored by default. Run them with
+//! `cargo test -- --include-ignored` on a checkout that has the photos.
 
 use chrono::{FixedOffset, Local, NaiveDate, NaiveDateTime, TimeZone as _, Utc};
 use photo_sort::analysis::exif2date::{get_exif_time, ExifDateType};
@@ -43,6 +47,7 @@ fn read(name: &str, zone: TimeZone) -> ZonedDateTime {
 }
 
 #[test]
+#[ignore = "needs the photos in tests/src"]
 fn uses_the_exif_offset_in_every_zone() {
     for zone in [TimeZone::Local, TimeZone::Utc, TimeZone::Fixed(fixed(2))] {
         let date = read("DSC06619.JPG", zone);
@@ -57,6 +62,7 @@ fn uses_the_exif_offset_in_every_zone() {
 }
 
 #[test]
+#[ignore = "needs the photos in tests/src"]
 fn reads_a_value_without_an_offset_in_the_given_zone() {
     let date = read("edited.jpg", TimeZone::Local);
     assert_eq!(date.naive_local(), date_without_offset());
