@@ -81,179 +81,239 @@ format string.
 Usage: photo_sort [OPTIONS] --source-dir <SOURCE_DIR>... --target-dir <TARGET_DIR>
 
 Options:
-  -s, --source-dir <SOURCE_DIR>...     The source directory to read the photos from
-  
-  -t, --target-dir <TARGET_DIR>        The target directory to write the sorted photos to
-  
-  -r, --recursive                      Whether to search the source directories recursively. If the flag is not set only
-                                       immediate children of the source directories are considered
-                                       
-      --dont-follow-symlinks           If set, symbolic links are not followed at all: neither links to directories nor
-                                       links to files. This is the same as setting --dont-follow-symlinked-dirs and
-                                       --dont-follow-symlinked-files together
-                                       
-      --dont-follow-symlinked-dirs    If set, symbolic links to directories are not followed during the recursive search.
-                                       Directories and files that are reached more than once are processed only once
-                                       
-      --dont-follow-symlinked-files   If set, symbolic links to files are skipped. If the target of a skipped link is also
-                                       reached by a real path, that path is processed
-                                       
-      --date-format <DATE_FORMAT>      Date format string to use as default date format. See [https://docs.rs/chrono/latest/chrono/format/strftime/index.html]
-                                       for more information [default: %Y%m%d-%H%M%S]
-                                       
-  -f, --file-format <FILE_FORMAT>      The target file format. Everything outside a {...} block is copied as is. The
-                                       target file format may contain "/" to indicate that the file should be placed in
-                                       a subdirectory. Use the `--mkdir` flag to create the subdirectories. `{name}` is
-                                       replaced with a filename without the date part. `{original_name}` is replaced with
-                                       the original filename without modification (without extension). `{original_filename}`
-                                       is replaced with the original filename without modification (with extension).
-                                       `{dup}` is replaced with a number if a file with the target name already exists.
-                                       `{date}` is replaced with the date string, formatted according
-                                       to the date_format parameter. `{date?format}` is
-                                       replaced with the date string, formatted according to the "format" parameter.
-                                       See [https://docs.rs/chrono/latest/chrono/format/strftime/index.html] for more
-                                       information. `{type}` is replaced with MOV or IMG. `{type?img,vid}` is replaced
-                                       with `img` if the file is an image, `vid` if the file is a video. Note that, when
-                                       using other types than IMG or MOV, and rerunning the program again, the custom
-                                       type will be seen as part of the file name. `{ext?upper/lower/copy}` is replaced
-                                       with the original file extension. If `?upper` or `?lower` is specified, the
-                                       extension will be made lower/upper case. leaving out `?...` or using `copy` copies
-                                       the original file extension. Commands of the form {label:cmd} are
-                                       replaced by {cmd}; if the replacement string is not empty then a prefix of "label"
-                                       is added. This might be useful to add separators only if there is e.g. a {dup}
-                                       part [default: {type}{_:date}{-:name}{-:dup}]
-                                       
-      --bracket <BRACKETED_FILE_FORMAT>The target file format for files that can be identified as bracketed photo set with
-                                       different exposure levels. By using `--bracket` all files identified as bracketed are
-                                       moved/renamed/copied with the specified format string instead of the default one
-                                       specified by `--target-dir`. The `--bracket` argument provides the following additional
-                                       format specifiers: `{bracket?group}` an increasing number, unique for each group of
-                                       bracketed images, `{bracket?index}` the index of the current photo in the sequence,
-                                       `{bracket?length}` the length of the bracketing sequence, `{bracket?first}`/`{bracket?last}`
-                                       the name of the first/last image in the sequence. Bracketed photos sequences are detected
-                                       via manufacturer-specific EXIF information. Note that using the `--bracket` option
-                                       requires each file to be analyzed using the EXIF analyzer, even if the Analysis type
-                                       is set to Name-only. Currently only works for Sony's cameras. Feel free to open an
-                                       issue requesting support for other vendors at https://github.com/0xCCF4/PhotoSort/issues
-                                       
-       --bracket-fmt <BRACKETING_FORMATTING_PRIORITY> When using the `--bracket` option, this flag controls which e.g. date information
-                                       is used for the file name formatting of intermediary directories. For example, with
-                                       `{date}/{date}-{name}.{ext}` as `--bracket` format files of the same bracket group
-                                       will be placed into different subdirectories when the date changes between shots, if
-                                       using the respective date information of each file (`current` mode). Using the `first`/`last`
-                                       mode changes the data source for intermediary directory formatting (except final file name)
-                                       to use the date information of the first respective last image in the bracketing sequence,
-                                       hence keeping files of the same bracket group together in the same subdirectory.
+  -s, --source-dir <SOURCE_DIR>...
+          The source directory to read the photos from
+
+  -t, --target-dir <TARGET_DIR>
+          The target directory to write the sorted photos to
+
+  -r, --recursive
+          Whether to search the source directories recursively. If the flag is not set only
+          immediate children of the source directories are considered
+
+      --dont-follow-symlinks
+          If set, symbolic links are not followed at all: neither links to directories nor links to
+          files. This is the same as setting `--dont-follow-symlinked-dirs` and
+          `--dont-follow-symlinked-files` together
+
+      --dont-follow-symlinked-dirs
+          If set, symbolic links to directories are not followed during the recursive search. If a
+          linked directory is also reached by a real path, its files are processed from that path
+          only
+
+      --dont-follow-symlinked-files
+          If set, symbolic links to files are skipped. If the target of a skipped link is also
+          reached by a real path, that path is processed
+
+      --date-format <DATE_FORMAT>
+          Date format string to use as default date format. See
+          <https://docs.rs/chrono/latest/chrono/format/strftime/index.html> for more information
+          
+          [default: %Y%m%d-%H%M%S]
+
+  -f, --file-format <FILE_FORMAT>
+          The target file format. Everything outside a {...} block is copied as is. The target file
+          format may contain "/" to indicate that the file should be placed in a subdirectory. Use
+          the `--mkdir` flag to create the subdirectories. `{name}` is replaced with a filename
+          without the date part. `{original_name}` is replaced with the original filename without
+          modification (without extension). `{original_filename}` is replaced with the original
+          filename without modification (with extension). `{dup}` is replaced with a number if a
+          file with the target name already exists. `{date}` is replaced with the date string,
+          formatted according to the `date_format` parameter. `{date?format}` is replaced with the
+          date string, formatted according to the "format" parameter. See
+          <https://docs.rs/chrono/latest/chrono/format/strftime/index.html> for more information.
+          `{type}` is replaced with MOV or IMG. `{type?img,vid}` is replaced with `img` if the file
+          is an image, `vid` if the file is a video. Note that, when using other types than IMG or
+          MOV, and rerunning the program again, the custom type will be seen as part of the file
+          name. `{ext?upper/lower/copy}` is replaced with the original file extension. If `?upper`
+          or `?lower` is specified, the extension will be made lower/upper case. leaving out `?...`
+          or using `copy` copies the original file extension. Commands of the form {label:cmd} are
+          replaced by {cmd}; if the replacement string is not empty then a prefix of "label" is
+          added. This might be useful to add separators only if there is e.g. a {dup} part
+          
+          [default: {type}{_:date}{-:name}{-:dup}.{ext}]
+
+      --nodate <NODATE_FILE_FORMAT>
+          The target format for files that have no date. The `analysis_mode` allows specifying which
+          method should be used to derive a date for a file. See the `file_format` option for an
+          extensive description of possible format values. If not specified, uses the same format as
+          for normal files
+
+      --unknown <UNKNOWN_FILE_FORMAT>
+          The target file format for files that do not match the specified extensions list. If not
+          present files that do not match the extension list are ignored, hence not moved, copied
+          etc. See the `file_format` for an extensive description of possible format values. By
+          using `--unknown others/{name}{.:ext}` all unknown files are moved to the subdirectory
+          "others" relative to the target directory (specified by `--target-dir`). To exclude files
+          from being processed at all, use the `--exclude` option
+
+      --exclude <EXCLUDE_FILES>
+          Files to exclude completely from processing. Files matched by this pattern are never
+          touched, even by the `--unknown` argument. This option could be useful to exclude files
+          like `Thumbs.db` or `.DS_Store` from being moved to the `--unknown` folder. The
+          `--exclude` option matches the relative file path to the respective source directory to
+          the given string (prefixed by the os path separator). `*` may be used to indicate any
+          number of any characters, excluding path separators. `**` may be used to indicate any
+          number of any characters, including path separators. For example, `--exclude
+          /abc/*/test/**/Thumbs.db` excludes any file named `Thumbs.db` in a `abc/<subdir>/test/<any
+          subdirs>/Thumbs.db` folder structure. On Windows use backslash instead. Symbolic links are
+          followed. A file behind a link is matched with the path under which it appears in the
+          source directory. A pattern without a directory part matches in the source directory
+          itself only. `--exclude /Thumbs.db` therefore excludes that file in the source directory
+          and not in its subdirectories. Use `--exclude **/Thumbs.db` to exclude that file name at
+          every level. The `--exclude` may be used multiple times to exclude multiple patterns. If
+          any pattern matches, the file is excluded. The `--exclude-regex` option works the same but
+          accepts a regular expression instead of literals with wildcards. By default, the pattern
+          matching is ignoring case. To enable case matching set `--exclude-case`
+
+      --exclude-regex <EXCLUDE_FILES_REGEX>
+          Same as `--exclude` but accepts regular expressions instead of literals with wildcards.
+          `*` and `**` wildcards do not work in the regex patterns but are interpreted as regex
+          match the last pattern character 0 or more times. For a list of supported regex patterns,
+          see <https://docs.rs/regex/latest/regex/#syntax>
+
+      --exclude-case
+          When set the exclude pattern to do not ignore upper/lower case
+
+      --include <INCLUDE_FILES>
+          When set to any, all files are by default ignored, only files matching any pattern
+          provided via `--include` or `--include-regex` argument are analysed. See `--exclude` for
+          an explanation of supported patterns. To enable case matching set `--include-case`. To
+          specify regex patterns use `--include-regex`. Note that `--exclude` will take priority
+          over `--include`, meaning that a file matching both an exclude and an include pattern will
+          be excluded
+
+      --include-regex <INCLUDE_FILES_REGEX>
+          Same as `--include` but accepts regular expressions instead of literals with wildcards.
+          `*` and `**` wildcards do not work in the regex patterns but are interpreted as regex
+          match the last pattern character 0 or more times. For a list of supported regex patterns,
+          see <https://docs.rs/regex/latest/regex/#syntax>
+
+      --include-case
+          When set the include pattern to do not ignore upper/lower case
+
+      --bracket <BRACKETED_FILE_FORMAT>
+          The target file format for files that can be identified as bracketed photo set with
+          different exposure levels. By using `--bracket` all files identified as bracketed are
+          moved/renamed/copied with the specified format string instead of the default one specified
+          by `--target-dir`. The `--bracket` argument provides the following additional format
+          specifiers: `{bracket?group}` an increasing number, unique for each group of bracketed
+          images, `{bracket?index}` the index of the current photo in the sequence,
+          `{bracket?length}` the length of the bracketing sequence,
+          `{bracket?first}`/`{bracket?last}` the name of the first/last image in the sequence.
+          Bracketed photos sequences are detected via manufacturer-specific EXIF information. Note
+          that using the `--bracket` option requires each file to be analyzed using the EXIF
+          analyzer, even if the Analysis type is set to Name-only. Currently only works for Sony's
+          cameras. Feel free to open an issue requesting support for other vendors at
+          <https://github.com/0xCCF4/PhotoSort/issues>
+
+      --bracket-fmt <BRACKETING_FORMATTING_PRIORITY>
+          When using the `--bracket` option, this flag controls which e.g. date information is used
+          for the file name formatting of intermediary directories. For example, with
+          `{date}/{date}-{name}.{ext}` as `--bracket` format files of the same bracket group will be
+          placed into different subdirectories when the date changes between shots, if using the
+          respective date information of each file (`current` mode). Using the `first`/`last` mode
+          changes the data source for intermediary directory formatting (except final file name) to
+          use the date information of the first respective last image in the bracketing sequence,
+          hence keeping files of the same bracket group together in the same subdirectory
           
           [default: first]
 
-                                       
-      --nodate <NODATE_FILE_FORMAT>    The target format for files that have no date. The `analysis_mode` allows specifying
-                                       which method should be used to derive a date for a file. See the `file_format` option
-                                       for an extensive description of possible format values. If not specified, uses the
-                                       same format as for normal files
-                                       
-      --unknown <UNKNOWN_FILE_FORMAT>  The target file format for files that do not match the specified extensions list.
-                                       If not present files that do not match the extension list are ignored, hence not moved,
-                                       copied etc. See the `file_format` for an extensive description of possible format values.
-                                       By using `--unknown others/{name}{.:ext}` all unknown files are moved to the subdirectory
-                                       "others" relative to the target directory (specified by `--target-dir`)
-                                       
-      --exclude <EXCLUDE_FILES>        Files to exclude completely from processing. Files matched by this pattern are never touched,
-                                       even by the `--unknown` argument. This option could be useful to exclude files like `Thumbs.db`
-                                       or `.DS_Store` from being moved to the `--unknown` folder. The `--exclude` option matches the
-                                       relative file path to the respective source directory to the given string (prefixed by the os path separator).
-                                       `*` may be used to indicate any number of any characters, excluding path separators. `**` may
-                                       be used to indicate any number of any characters, including path separators. For example,
-                                       `--exclude /abc/*/test/**/Thumbs.db` would exclude any file named `Thumbs.db` in a
-                                       `abc/<subdir>/test/<any subdirs>/Thumbs.db` folder structure. On Windows use backslash
-                                       instead. The `--exclude` may be used multiple times to exclude multiple patterns. If any
-                                       pattern matches, the file is excluded. The `--exclude-regex` option works the same but
-                                       accepts a regular expression instead of literals with wildcards. By default, the pattern
-                                       matching is ignoring case. To enable case matching set `--exclude-case`
+      --mkdir
+          If the file format contains a "/", indicating that the file should be placed in a
+          subdirectory, the mkdir flag controls if the tool is allowed to create non-existing
+          subdirectories. No folder is created in dry-run mode
 
-      --exclude-regex <EXCLUDE_FILES_REGEX> Same as `--exclude` but accepts regular expressions instead of literals with wildcards.
-                                       `*` and `**` wildcards do not work in the regex patterns but are interpreted as regex match the
-                                       last pattern character 0 or more times. For a list of supported regex patterns,
-                                       see <https://docs.rs/regex/latest/regex/#syntax>
+  -e, --extensions [<EXTENSIONS>...]
+          A comma separated list of file extensions to include in the analysis
+          
+          [default: jpg,jpeg,png,tiff,heif,heic,avif,webp]
 
-      --exclude-case                   When set the exclude pattern to do not ignore upper/lower case
-
-      --include <INCLUDE_FILES>        When set to any, all files are by default ignored, only files matching any pattern provided via
-                                       `--include` or `--include-regex` argument are analysed. See `--exclude` for an explanation of
-                                       supported patterns. To enable case matching set `--include-case`. To specify regex patterns use
-                                       `--include-regex`. Note that `--exclude` will take priority over `--include`, meaning that a
-                                       file matching both an exclude and an include pattern will be excluded
-
-      --include-regex <INCLUDE_FILES_REGEX> Same as `--include` but accepts regular expressions instead of literals with wildcards. `*` and
-                                       `**` wildcards do not work in the regex patterns but are interpreted as regex match the last pattern
-                                       character 0 or more times. For a list of supported regex patterns, see <https://docs.rs/regex/latest/regex/#syntax>
-
-      --include-case                   When set the include pattern to do not ignore upper/lower case
-                                       
-      --mkdir                          If the file format contains a "/", indicating that the file should be placed in a
-                                       subdirectory, the mkdir flag controls if the tool is allowed to create non-existing subdirectories. No folder is
-                                       created in dry-run mode
-                                       
-  -e, --extensions [<EXTENSIONS>...]   A comma separated list of file extensions to include in the analysis
-                                       [default: jpg,jpeg,png,tiff,heif,heic,avif,webp]
-                                       
-  -a, --analysis-mode <ANALYSIS_MODE>  The sorting mode, possible values are `name_then_metadata`, `metadata_then_name`,
-                                       `only_name`, `only_metadata`. Name analysis tries to extract the date from the file name,
-                                       Metadata analysis tries to extract the date from the EXIF data/video metadata
-                                       [default: exit/video metadata then name]
-                                       
-       --date-field <EXIF_DATE_TYPE>   The EXIF date field to use, possible values are `modify`, `creation`, `digitized`.
-                                       EXIF data contains several date fields. `Modify` is the modification date, which
-                                       is updated when the file is edited. `Create` is the creation date, which is usually
-                                       the date when the photo was taken. `Digitize` is the digitized date, which is the
-                                       date when the photo was digitized (for example, when converting a film photo to
-                                       a digital image). For digital cameras, this is usually the same as the creation
-                                       date. The default is `create`
-                                       [default: create]
-                                       
-  -m, --move-mode <MOVE_MODE>          The action mode, possible values are move, copy, hardlink, relative_symlink,
-                                       absolute_symlink. Move will move the files, Copy will copy the files, Hardlink
-                                       (alias: hard) will create hardlinks, RelativeSymlink (alias: relsym) will create
-                                       relative symlinks, AbsoluteSymlink (alias: abssym) will create absolute symlinks
-                                       [default: move]
-                                       
-  -n, --dry-run                        Dry-run If set, the tool will not move any files but only print the actions it would take
-  
-  -v, --verbose                        Be verbose, if set, the tool will print more information about the actions it takes.
-                                       
-  -d, --debug                          Debug, if set, the tool will print debug information (including debug implies
-                                       setting verbose).
-                                      
-  -l, --log <LOGFILE>                  Logfile, if set, the tool will log its output to the specified file. Appending to
-                                       the specified file if it already exists
-
-  -q, --quiet                          If set, suppresses the output of the tool to stdout/stderr. Only displaying error
-                                       messages. Specifying a logfile at the same time will redirect the full output that
-                                       would have been displayed to stdout/stderr to the logfile. Specifying `--debug` or
-                                       `--verbose` plus `--quiet` without a logfile will result in an error
-                                      
-  -p, --progress                       If set, display a progress bar while processing files
-  
-  --threads <THREADS>                  If set, use multi-threading
-
-  -h, --help                           Print help
-  
-  -V, --version                        Print version 
-
-      --time-zone <TIME_ZONE>              The time zone to assume when a file states no offset. When the file does not
-                                           provide such an offset, this value is used. `local` is the local time of this
-                                           computer, `utc` is UTC, and a fixed offset such as `+02:00` is the time in that
-                                           offset [default: local]
+      --time-zone <TIME_ZONE>
+          The time zone to assume when a file states no offset. When the file does not provide such
+          an offset, this value is used. `local` is the local time of this computer, `utc` is UTC,
+          and a fixed offset such as `+02:00` is the time in that offset
+          
+          [default: local]
 
       --output-time-zone <OUTPUT_TIME_ZONE>
-                                           The time zone that the file names show. `local` shows the local time of this
-                                           computer, `utc` shows UTC, and a fixed offset such as `+02:00` shows the time
-                                           in that offset. The date of the file is read first, then it is converted to this
-                                           zone. Without this option, the value of `--time-zone` is used
+          The time zone that the file names show. `local` shows the local time of this computer,
+          `utc` shows UTC, and a fixed offset such as `+02:00` shows the time in that offset. The
+          date of the file is read first, then it is converted to this zone. Without this option,
+          the value of `--time-zone` is used
+
+  -a, --analysis-mode <ANALYSIS_MODE>
+          The sorting mode, possible values are `name_then_exif`, `exif_then_name`, `only_name`,
+          `only_exif`. Name analysis tries to extract the date from the file name, Exif analysis
+          tries to extract the date from the EXIF data
+          
+          [default: exif_then_name]
+
+      --date-field <EXIF_DATE_TYPE>
+          The EXIF date field to use, possible values are `modify`, `creation`, `digitized`. EXIF
+          data contains several date fields. `Modify` is the modification date, which is updated
+          when the file is edited. `Create` is the creation date, which is usually the date when the
+          photo was taken. `Digitize` is the digitized date, which is the date when the photo was
+          digitized (for example, when converting a film photo to a digital image). For digital
+          cameras, this is usually the same as the creation date. The default is `create`
+          
+          [default: create]
+
+  -m, --move-mode <MOVE_MODE>
+          The action mode, possible values are `move`, `copy`, `hardlink`, `relative_symlink`,
+          `absolute_symlink`. `Move` will move the files, `Copy` will copy the files, `Hardlink`
+          (alias: `hard`) will create hardlinks, `RelativeSymlink` (alias: `relsym`) will create
+          relative symlinks, `AbsoluteSymlink` (alias: `abssym`) will create absolute symlinks
+          
+          [default: move]
+
+  -n, --dry-run
+          Dry-run If set, the tool will not move any files but only print the actions it would take
+
+  -v, --verbose
+          Be verbose, if set, the tool will print more information about the actions it takes
+
+  -d, --debug
+          Debug, if set, the tool will print debug information (including debug implies setting
+          verbose)
+
+  -l, --log <LOGFILE>
+          Logfile, if set, the tool will log its output to the specified file. Appending to the
+          specified file if it already exists
+
+  -q, --quiet
+          If set, suppresses the output of the tool to stdout/stderr. Only displaying error
+          messages. Specifying a logfile at the same time will redirect the full output that would
+          have been displayed to stdout/stderr to the logfile. Specifying `--debug` or `--verbose`
+          plus `--quiet` without a logfile will result in an error
+
+  -p, --progress
+          If set, display a progress bar while processing files
+
+      --threads <THREADS>
+          If set, use multi-threading. Multi-threaded mode keeps the analysis of all files in memory
+          for the planning step, so memory grows with the number of files. Omit this option, or use
+          `--threads 1`, to process one file at a time with a constant amount of memory if you run
+          out of memory, or sort smaller subset of files
+
+      --fast
+          If set, do not sort the file list before planning and do not sort the entries of a
+          directory while scanning. This saves time on large libraries, but the result is a
+          non-reproducible sorting: the order of the actions and the `{dup}` numbers depend on the
+          order in which the file system returns the entries. Ignored with `--bracket`, because the
+          bracketing detection needs the sorted order
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
 
 When building with video support enabled (see below):
-      --video-extensions [<VIDEO_EXTENSIONS>...]  A comma separated list of video extensions to include in the analysis [default: mp4,mov,avi]
+      --video-extensions [<VIDEO_EXTENSIONS>...]
+          A comma separated list of video extensions to include in the analysis
+          
+          [default: mp4,mov,avi]
 ```
 
 ## Installation

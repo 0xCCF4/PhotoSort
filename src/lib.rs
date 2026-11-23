@@ -1,7 +1,6 @@
 #![doc = include_str!("../README.md")]
 #![allow(clippy::unnecessary_debug_formatting)]
 
-use crate::action::ActualAction;
 use crate::analysis::exif2date::ExifDateType;
 use crate::analysis::name_formatters::{
     BracketInfo, BracketingFormattingPriority, FileType, NameFormatterInvocationInfo,
@@ -24,6 +23,7 @@ use std::sync::LazyLock;
 pub mod action;
 pub mod analysis;
 pub mod name;
+pub mod target_plan;
 #[doc(hidden)]
 pub mod testutils;
 
@@ -102,6 +102,11 @@ pub struct AnalyzerSettings {
     pub source_dirs: Vec<PathBuf>,
     pub target_dir: PathBuf,
     pub recursive_source: bool,
+    /// Do not sort the file list before planning and do not sort directory entries.
+    /// The result is then not reproducible. Ignored when `bracketed_file_format`
+    /// is set, because the bracketing detection needs the sorted order. See
+    /// [`AnalyzerSettings::sorted_order`].
+    pub fast: bool,
     pub dont_follow_symlinked_dirs: bool,
     pub dont_follow_symlinked_files: bool,
     pub file_format: String,
@@ -119,6 +124,17 @@ pub struct AnalyzerSettings {
     pub mkdir: bool,
     pub excluded_files: Vec<Regex>,
     pub included_files: Vec<Regex>,
+}
+
+impl AnalyzerSettings {
+    /// Whether the files must be processed in the sorted order of their paths.
+    ///
+    /// `--fast` gives up the sorted order to save time, but the bracketing
+    /// detection looks for the files of a sequence next to each other in the file
+    /// list. It therefore keeps the sorting.
+    pub fn sorted_order(&self) -> bool {
+        !self.fast || self.bracketed_file_format.is_some()
+    }
 }
 
 /// Builds the regular expressions for the file include and exclude patterns.
@@ -205,9 +221,6 @@ static RE_COMMAND_SPLIT: LazyLock<regex::Regex> = LazyLock::new(|| {
     )
     .expect("Failed to compile regex")
 });
-
-static LOCK_MOVE_OPERATION: LazyLock<std::sync::Mutex<()>> =
-    LazyLock::new(|| std::sync::Mutex::new(()));
 
 /// `Analyzer` is a struct that represents an analyzer for files.
 ///
@@ -537,6 +550,11 @@ impl Analyzer {
 
     /// Performs the file action specified in the `Analyzer`'s settings on a file.
     ///
+    /// This is the single file path: it analyses, plans, and executes one file
+    /// before the next file is touched, so memory stays constant. For a batch of
+    /// files use [`target_plan::Planner`] instead, which resolves all names before
+    /// the first action runs.
+    ///
     /// # Arguments
     ///
     /// * `path` - A `PathBuf` that represents the path of the file to perform the action on.
@@ -552,7 +570,6 @@ impl Analyzer {
     /// * The analysis of the file fails.
     /// * An IO error occurs while analyzing the date
     /// * An IO error occurs while doing the file action
-    #[allow(clippy::too_many_lines)]
     pub fn run_file<P: AsRef<Path>>(
         &self,
         path: P,
@@ -572,170 +589,104 @@ impl Analyzer {
             }
         };
 
-        let new_file_path = |file_name_info: &NameFormatterInvocationInfo| -> Result<PathBuf> {
-            let format_string = if data.file_type == FileType::None {
-                self.settings
-                    .unknown_file_format
-                    .as_ref()
-                    .ok_or(anyhow!("No unknown format string specified"))?
-                    .as_str()
-            } else if let (Some(bracket_info), Some(_)) =
-                (&self.settings.bracketed_file_format, &bracket_info)
-            {
-                bracket_info.as_str()
-            } else if data.date.is_some() {
-                self.settings.file_format.as_str()
-            } else {
-                self.settings.nodate_file_format.as_str()
-            };
+        let mut planner = target_plan::Planner::streaming(self);
+        let entry = planner.resolve_one(path, &mut data)?;
+        self.execute_entry(&entry)
+    }
 
-            let path_split: Vec<_> = format_string.split('/').collect();
-            let len = path_split.len();
-            let path_split: Vec<_> = path_split
-                .into_iter()
-                .enumerate()
-                .map(|(index, component)| {
-                    let is_leaf = index == len - 1;
-                    let bracketing_info = file_name_info.bracket_info;
+    /// Computes the target path of a file from its analysis result.
+    ///
+    /// This does not touch the file system. Two calls with the same analysis
+    /// result and the same `duplicate_counter` return the same path.
+    ///
+    /// # Arguments
+    ///
+    /// * `data` - The analysis result of the file.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<PathBuf>` - The target path, or an error if the format string
+    ///   cannot be formatted.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no format string is configured for this kind of file
+    /// or if a part of the format string cannot be replaced.
+    pub fn target_path(&self, data: &NameFormatterInvocationInfo) -> Result<PathBuf> {
+        let format_string = if data.file_type == FileType::None {
+            self.settings
+                .unknown_file_format
+                .as_ref()
+                .ok_or(anyhow!("No unknown format string specified"))?
+                .as_str()
+        } else if let (Some(bracket_info), Some(_)) =
+            (&self.settings.bracketed_file_format, &data.bracket_info)
+        {
+            bracket_info.as_str()
+        } else if data.date.is_some() {
+            self.settings.file_format.as_str()
+        } else {
+            self.settings.nodate_file_format.as_str()
+        };
 
-                    if let Some(bracketing_info) = bracketing_info {
-                        if is_leaf {
-                            self.replace_filepath_parts(component, file_name_info)
-                        } else {
-                            match self.settings.bracketing_formatting {
-                                BracketingFormattingPriority::First => {
-                                    if let Some(bracketed_format) = &bracketing_info.analysis_first
-                                    {
-                                        let mut bracketed_format =
-                                            bracketed_format.as_ref().clone();
-                                        bracketed_format.bracket_info = Some(bracketing_info);
-                                        self.replace_filepath_parts(component, &bracketed_format)
-                                    } else {
-                                        self.replace_filepath_parts(component, file_name_info)
-                                    }
-                                }
-                                BracketingFormattingPriority::Last => {
-                                    if let Some(bracketed_format) = &bracketing_info.analysis_last {
-                                        let mut bracketed_format =
-                                            bracketed_format.as_ref().clone();
-                                        bracketed_format.bracket_info = Some(bracketing_info);
-                                        self.replace_filepath_parts(component, &bracketed_format)
-                                    } else {
-                                        self.replace_filepath_parts(component, file_name_info)
-                                    }
-                                }
-                                BracketingFormattingPriority::Current => {
-                                    self.replace_filepath_parts(component, file_name_info)
+        let path_split: Vec<_> = format_string.split('/').collect();
+        let len = path_split.len();
+        let path_split: Vec<_> = path_split
+            .into_iter()
+            .enumerate()
+            .map(|(index, component)| {
+                let is_leaf = index == len - 1;
+                let bracketing_info = data.bracket_info;
+
+                if let Some(bracketing_info) = bracketing_info {
+                    if is_leaf {
+                        self.replace_filepath_parts(component, data)
+                    } else {
+                        match self.settings.bracketing_formatting {
+                            BracketingFormattingPriority::First => {
+                                if let Some(bracketed_format) = &bracketing_info.analysis_first {
+                                    let mut bracketed_format = bracketed_format.as_ref().clone();
+                                    bracketed_format.bracket_info = Some(bracketing_info);
+                                    self.replace_filepath_parts(component, &bracketed_format)
+                                } else {
+                                    self.replace_filepath_parts(component, data)
                                 }
                             }
-                        }
-                    } else {
-                        self.replace_filepath_parts(component, file_name_info)
-                    }
-                })
-                .collect();
-
-            for entry in &path_split {
-                if let Err(err) = entry {
-                    return Err(anyhow!("Failed to format filename: {err}"));
-                }
-            }
-            let path_split = path_split.into_iter().map(Result::unwrap);
-
-            let mut target_path = self.settings.target_dir.clone();
-            for path_component in path_split {
-                let component = path_component.replace(['/', '\\'], "");
-                if component != ".." {
-                    target_path.push(component);
-                }
-            }
-            Ok(target_path)
-        };
-
-        let mut new_path = new_file_path(&data)?;
-        let mut dup_counter = 0;
-
-        let lock_rename = match LOCK_MOVE_OPERATION.lock() {
-            Ok(guard) => Some(guard),
-            Err(err) => {
-                warn!("Failed to acquire lock for move operation: {err}");
-                None
-            }
-        };
-
-        while new_path.exists() {
-            debug!("Target file already exists: {}", new_path.display());
-
-            let source_file_stream = std::fs::File::open(&new_path).map_err(|err| {
-                anyhow!(
-                    "Failed to open source file for de-duplication check: {}: {err}",
-                    new_path.display()
-                )
-            })?;
-            match std::fs::File::open(path) {
-                Ok(target_file_stream) => {
-                    // now compare file contents
-
-                    match streams_equal(source_file_stream, target_file_stream) {
-                        Err(err) => {
-                            error!(
-                                "Failed to compare files: {} {} -> {}.",
-                                path.display(),
-                                new_path.display(),
-                                err
-                            );
-                        }
-                        Ok(true) => {
-                            // source = target
-
-                            drop(lock_rename);
-
-                            debug!("De-duplicating file {} because it is identical to the target file {}.", path.display(), new_path.display());
-
-                            return match self.settings.action_type {
-                                ActionMode::Execute(ActualAction::Move) => fs::remove_file(path).map_err(|err| anyhow!("Failed to remove source file during de-duplication: {}: {err}", path.display())),
-                                ActionMode::Execute(ActualAction::Copy | ActualAction::Hardlink | ActualAction::RelativeSymlink | ActualAction::AbsoluteSymlink) => Ok(()),
-                                ActionMode::DryRun(_action) => {
-                                    Ok(())
+                            BracketingFormattingPriority::Last => {
+                                if let Some(bracketed_format) = &bracketing_info.analysis_last {
+                                    let mut bracketed_format = bracketed_format.as_ref().clone();
+                                    bracketed_format.bracket_info = Some(bracketing_info);
+                                    self.replace_filepath_parts(component, &bracketed_format)
+                                } else {
+                                    self.replace_filepath_parts(component, data)
                                 }
-                            };
-                        }
-                        Ok(false) => {
-                            // source != target
+                            }
+                            BracketingFormattingPriority::Current => {
+                                self.replace_filepath_parts(component, data)
+                            }
                         }
                     }
+                } else {
+                    self.replace_filepath_parts(component, data)
                 }
-                Err(err) => {
-                    warn!(
-                        "Failed to open target file for de-duplication check: {}: {err}",
-                        path.display()
-                    );
-                }
+            })
+            .collect();
+
+        for entry in &path_split {
+            if let Err(err) = entry {
+                return Err(anyhow!("Failed to format filename: {err}"));
             }
+        }
+        let path_split = path_split.into_iter().map(Result::unwrap);
 
-            dup_counter += 1;
-            data.duplicate_counter = Some(dup_counter);
-            let new_path_candidate = new_file_path(&data)?;
-
-            if new_path_candidate == new_path {
-                return Err(anyhow!("Target file {} already exists; content differs. Consider providing the {{:dup}} format specifier to the format string to resolve duplicate naming.", new_path.display()));
+        let mut target_path = self.settings.target_dir.clone();
+        for path_component in path_split {
+            let component = path_component.replace(['/', '\\'], "");
+            if component != ".." {
+                target_path.push(component);
             }
-
-            new_path = new_path_candidate;
         }
-
-        if dup_counter > 0 {
-            info!("De-duplicated target file: {}", new_path.display());
-        }
-
-        action::file_action(
-            path,
-            &new_path,
-            &self.settings.action_type,
-            self.settings.mkdir,
-            lock_rename,
-        )?;
-        Ok(())
+        Ok(target_path)
     }
 
     /// Analyzes a file and returns the analysis context, which includes the file path, whether it's an unknown file, the extracted date, and the information for name formatting.
@@ -1011,12 +962,14 @@ impl Analyzer {
         }
 
         let mut entries = fs::read_dir(directory)?.collect::<Vec<std::io::Result<DirEntry>>>();
-        entries.sort_by(|a, b| match (a, b) {
-            (Ok(a), Ok(b)) => a.path().cmp(&b.path()),
-            (Err(_), Ok(_)) => Ordering::Less,
-            (Ok(_), Err(_)) => Ordering::Greater,
-            (Err(_), Err(_)) => Ordering::Equal,
-        });
+        if self.settings.sorted_order() {
+            entries.sort_by(|a, b| match (a, b) {
+                (Ok(a), Ok(b)) => a.path().cmp(&b.path()),
+                (Err(_), Ok(_)) => Ordering::Less,
+                (Ok(_), Err(_)) => Ordering::Greater,
+                (Err(_), Err(_)) => Ordering::Equal,
+            });
+        }
         for entry in entries {
             let entry = entry?;
             let path = entry.path();
@@ -1106,7 +1059,7 @@ pub struct BracketEXIFInformation {
     pub index: u32,
 }
 
-fn streams_equal<R1: Read, R2: Read>(a: R1, b: R2) -> std::io::Result<bool> {
+pub(crate) fn streams_equal<R1: Read, R2: Read>(a: R1, b: R2) -> std::io::Result<bool> {
     let mut a = BufReader::new(a);
     let mut b = BufReader::new(b);
 
