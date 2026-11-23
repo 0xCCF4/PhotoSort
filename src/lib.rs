@@ -1,16 +1,13 @@
 #![doc = include_str!("../README.md")]
 #![allow(clippy::unnecessary_debug_formatting)]
 
-use crate::action::ActualAction;
 use crate::analysis::exif2date::ExifDateType;
 use crate::analysis::name_formatters::{
     BracketInfo, BracketingFormattingPriority, FileType, NameFormatterInvocationInfo,
 };
-#[cfg(feature = "video")]
-use crate::analysis::video2date::VideoTimeZone;
+use crate::analysis::time_zone::{TimeZone, ZonedDateTime};
 use action::ActionMode;
 use anyhow::{anyhow, Result};
-use chrono::NaiveDateTime;
 use log::{debug, error, info, trace, warn};
 use regex::{Regex, RegexBuilder};
 use std::cmp::Ordering;
@@ -26,6 +23,7 @@ use std::sync::LazyLock;
 pub mod action;
 pub mod analysis;
 pub mod name;
+pub mod target_plan;
 #[doc(hidden)]
 pub mod testutils;
 
@@ -90,7 +88,8 @@ impl FromStr for AnalysisType {
 /// * `unknown_file_format` - An optional string that represents the target format of files not matching the list of extensions
 /// * `date_format` - A string that represents the format of the dates in the files to analyze.
 /// * `extensions` - A vector of strings that represent the file extensions to consider during analysis.
-/// * `video_time_zone` - How to interpret the creation time of a video file. See [`VideoTimeZone`] for details.
+/// * `time_zone` - The time zone to assume when a file states no offset. See [`TimeZone`] for details.
+/// * `output_time_zone` - The time zone that the file names show. See [`TimeZone`] for details.
 /// * `action_type` - An `ActionMode` that specifies the type of action to perform on a file after analysis.
 /// * `mkdir` - A boolean that indicates whether to create the target directory if it does not exist.
 /// * `excluded_files` - A list of regexes to check if a file should be excluded from analysis.
@@ -103,6 +102,11 @@ pub struct AnalyzerSettings {
     pub source_dirs: Vec<PathBuf>,
     pub target_dir: PathBuf,
     pub recursive_source: bool,
+    /// Do not sort the file list before planning and do not sort directory entries.
+    /// The result is then not reproducible. Ignored when `bracketed_file_format`
+    /// is set, because the bracketing detection needs the sorted order. See
+    /// [`AnalyzerSettings::sorted_order`].
+    pub fast: bool,
     pub dont_follow_symlinked_dirs: bool,
     pub dont_follow_symlinked_files: bool,
     pub file_format: String,
@@ -112,14 +116,25 @@ pub struct AnalyzerSettings {
     pub date_format: String,
     pub bracketing_formatting: BracketingFormattingPriority,
     pub extensions: Vec<String>,
-    #[cfg(feature = "video")]
-    pub video_time_zone: VideoTimeZone,
+    pub time_zone: TimeZone,
+    pub output_time_zone: TimeZone,
     #[cfg(feature = "video")]
     pub video_extensions: Vec<String>,
     pub action_type: ActionMode,
     pub mkdir: bool,
     pub excluded_files: Vec<Regex>,
     pub included_files: Vec<Regex>,
+}
+
+impl AnalyzerSettings {
+    /// Whether the files must be processed in the sorted order of their paths.
+    ///
+    /// `--fast` gives up the sorted order to save time, but the bracketing
+    /// detection looks for the files of a sequence next to each other in the file
+    /// list. It therefore keeps the sorting.
+    pub fn sorted_order(&self) -> bool {
+        !self.fast || self.bracketed_file_format.is_some()
+    }
 }
 
 /// Builds the regular expressions for the file include and exclude patterns.
@@ -206,9 +221,6 @@ static RE_COMMAND_SPLIT: LazyLock<regex::Regex> = LazyLock::new(|| {
     )
     .expect("Failed to compile regex")
 });
-
-static LOCK_MOVE_OPERATION: LazyLock<std::sync::Mutex<()>> =
-    LazyLock::new(|| std::sync::Mutex::new(()));
 
 /// `Analyzer` is a struct that represents an analyzer for files.
 ///
@@ -297,10 +309,10 @@ impl Analyzer {
         self.name_formatters.push(Box::new(formatter));
     }
 
-    fn analyze_name(&self, name: &str) -> Result<(Option<NaiveDateTime>, String)> {
+    fn analyze_name(&self, name: &str) -> Result<(Option<ZonedDateTime>, String)> {
         let result = analysis::get_name_time(name, &self.name_transformers)?;
         match result {
-            Some((time, name)) => Ok((Some(time), name)),
+            Some((time, name)) => Ok((Some(self.settings.time_zone.read(time)), name)),
             None => Ok((None, name.to_string())),
         }
     }
@@ -308,19 +320,19 @@ impl Analyzer {
     fn analyze_photo_exif<S: Read + Seek>(
         file: S,
         date_type: ExifDateType,
-    ) -> Result<Option<NaiveDateTime>> {
-        let exif_time = analysis::exif2date::get_exif_time(file, date_type)?;
+        zone: TimeZone,
+    ) -> Result<Option<ZonedDateTime>> {
+        let exif_time = analysis::exif2date::get_exif_time(file, date_type, zone)?;
         Ok(exif_time)
     }
 
     #[cfg(feature = "video")]
-    fn analyze_video_metadata<P: AsRef<Path>>(&self, path: P) -> Result<Option<NaiveDateTime>> {
-        let video_time =
-            analysis::video2date::get_video_time_with_zone(path, self.settings.video_time_zone)?;
+    fn analyze_video_metadata<P: AsRef<Path>>(&self, path: P) -> Result<Option<ZonedDateTime>> {
+        let video_time = analysis::video2date::get_video_time(path, self.settings.time_zone)?;
         Ok(video_time)
     }
 
-    fn analyze_embedded_metadata<A: AsRef<Path>>(&self, path: A) -> Result<Option<NaiveDateTime>> {
+    fn analyze_embedded_metadata<A: AsRef<Path>>(&self, path: A) -> Result<Option<ZonedDateTime>> {
         let path = path.as_ref();
 
         #[cfg(feature = "video")]
@@ -336,7 +348,11 @@ impl Analyzer {
 
         if photo {
             let file = File::open(path)?;
-            return Analyzer::analyze_photo_exif(&file, self.settings.exif_date_type);
+            return Analyzer::analyze_photo_exif(
+                &file,
+                self.settings.exif_date_type,
+                self.settings.time_zone,
+            );
         }
         #[cfg(feature = "video")]
         if video {
@@ -352,8 +368,9 @@ impl Analyzer {
     /// * `path` - A `PathBuf` that represents the path of the file to analyze.
     ///
     /// # Returns
-    /// * `Result<(Option<NaiveDateTime>, String)>` - Returns a tuple containing an `Option<NaiveDateTime>` and a `String`.
-    ///   The `Option<NaiveDateTime>` represents the date and time extracted from the file, if any.
+    /// * `Result<(Option<ZonedDateTime>, String)>` - Returns a tuple containing an `Option<ZonedDateTime>` and a `String`.
+    ///   The `Option<ZonedDateTime>` represents the date and time extracted from the file, if any,
+    ///   with the offset that the input time zone gives it.
     ///   The `String` represents the transformed name of the file.
     ///
     /// # Errors
@@ -361,7 +378,7 @@ impl Analyzer {
     /// * The file name cannot be retrieved or is invalid.
     /// * The file cannot be opened.
     /// * An error occurs during the analysis of the file's Exif data or name.
-    pub fn analyze<A: AsRef<Path>>(&self, path: A) -> Result<(Option<NaiveDateTime>, String)> {
+    pub fn analyze<A: AsRef<Path>>(&self, path: A) -> Result<(Option<ZonedDateTime>, String)> {
         let path = path.as_ref();
 
         let name = path
@@ -533,6 +550,11 @@ impl Analyzer {
 
     /// Performs the file action specified in the `Analyzer`'s settings on a file.
     ///
+    /// This is the single file path: it analyses, plans, and executes one file
+    /// before the next file is touched, so memory stays constant. For a batch of
+    /// files use [`target_plan::Planner`] instead, which resolves all names before
+    /// the first action runs.
+    ///
     /// # Arguments
     ///
     /// * `path` - A `PathBuf` that represents the path of the file to perform the action on.
@@ -548,7 +570,6 @@ impl Analyzer {
     /// * The analysis of the file fails.
     /// * An IO error occurs while analyzing the date
     /// * An IO error occurs while doing the file action
-    #[allow(clippy::too_many_lines)]
     pub fn run_file<P: AsRef<Path>>(
         &self,
         path: P,
@@ -568,170 +589,104 @@ impl Analyzer {
             }
         };
 
-        let new_file_path = |file_name_info: &NameFormatterInvocationInfo| -> Result<PathBuf> {
-            let format_string = if data.file_type == FileType::None {
-                self.settings
-                    .unknown_file_format
-                    .as_ref()
-                    .ok_or(anyhow!("No unknown format string specified"))?
-                    .as_str()
-            } else if let (Some(bracket_info), Some(_)) =
-                (&self.settings.bracketed_file_format, &bracket_info)
-            {
-                bracket_info.as_str()
-            } else if data.date.is_some() {
-                self.settings.file_format.as_str()
-            } else {
-                self.settings.nodate_file_format.as_str()
-            };
+        let mut planner = target_plan::Planner::streaming(self);
+        let entry = planner.resolve_one(path, &mut data)?;
+        self.execute_entry(&entry)
+    }
 
-            let path_split: Vec<_> = format_string.split('/').collect();
-            let len = path_split.len();
-            let path_split: Vec<_> = path_split
-                .into_iter()
-                .enumerate()
-                .map(|(index, component)| {
-                    let is_leaf = index == len - 1;
-                    let bracketing_info = file_name_info.bracket_info;
+    /// Computes the target path of a file from its analysis result.
+    ///
+    /// This does not touch the file system. Two calls with the same analysis
+    /// result and the same `duplicate_counter` return the same path.
+    ///
+    /// # Arguments
+    ///
+    /// * `data` - The analysis result of the file.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<PathBuf>` - The target path, or an error if the format string
+    ///   cannot be formatted.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no format string is configured for this kind of file
+    /// or if a part of the format string cannot be replaced.
+    pub fn target_path(&self, data: &NameFormatterInvocationInfo) -> Result<PathBuf> {
+        let format_string = if data.file_type == FileType::None {
+            self.settings
+                .unknown_file_format
+                .as_ref()
+                .ok_or(anyhow!("No unknown format string specified"))?
+                .as_str()
+        } else if let (Some(bracket_info), Some(_)) =
+            (&self.settings.bracketed_file_format, &data.bracket_info)
+        {
+            bracket_info.as_str()
+        } else if data.date.is_some() {
+            self.settings.file_format.as_str()
+        } else {
+            self.settings.nodate_file_format.as_str()
+        };
 
-                    if let Some(bracketing_info) = bracketing_info {
-                        if is_leaf {
-                            self.replace_filepath_parts(component, file_name_info)
-                        } else {
-                            match self.settings.bracketing_formatting {
-                                BracketingFormattingPriority::First => {
-                                    if let Some(bracketed_format) = &bracketing_info.analysis_first
-                                    {
-                                        let mut bracketed_format =
-                                            bracketed_format.as_ref().clone();
-                                        bracketed_format.bracket_info = Some(bracketing_info);
-                                        self.replace_filepath_parts(component, &bracketed_format)
-                                    } else {
-                                        self.replace_filepath_parts(component, file_name_info)
-                                    }
-                                }
-                                BracketingFormattingPriority::Last => {
-                                    if let Some(bracketed_format) = &bracketing_info.analysis_last {
-                                        let mut bracketed_format =
-                                            bracketed_format.as_ref().clone();
-                                        bracketed_format.bracket_info = Some(bracketing_info);
-                                        self.replace_filepath_parts(component, &bracketed_format)
-                                    } else {
-                                        self.replace_filepath_parts(component, file_name_info)
-                                    }
-                                }
-                                BracketingFormattingPriority::Current => {
-                                    self.replace_filepath_parts(component, file_name_info)
+        let path_split: Vec<_> = format_string.split('/').collect();
+        let len = path_split.len();
+        let path_split: Vec<_> = path_split
+            .into_iter()
+            .enumerate()
+            .map(|(index, component)| {
+                let is_leaf = index == len - 1;
+                let bracketing_info = data.bracket_info;
+
+                if let Some(bracketing_info) = bracketing_info {
+                    if is_leaf {
+                        self.replace_filepath_parts(component, data)
+                    } else {
+                        match self.settings.bracketing_formatting {
+                            BracketingFormattingPriority::First => {
+                                if let Some(bracketed_format) = &bracketing_info.analysis_first {
+                                    let mut bracketed_format = bracketed_format.as_ref().clone();
+                                    bracketed_format.bracket_info = Some(bracketing_info);
+                                    self.replace_filepath_parts(component, &bracketed_format)
+                                } else {
+                                    self.replace_filepath_parts(component, data)
                                 }
                             }
-                        }
-                    } else {
-                        self.replace_filepath_parts(component, file_name_info)
-                    }
-                })
-                .collect();
-
-            for entry in &path_split {
-                if let Err(err) = entry {
-                    return Err(anyhow!("Failed to format filename: {err}"));
-                }
-            }
-            let path_split = path_split.into_iter().map(Result::unwrap);
-
-            let mut target_path = self.settings.target_dir.clone();
-            for path_component in path_split {
-                let component = path_component.replace(['/', '\\'], "");
-                if component != ".." {
-                    target_path.push(component);
-                }
-            }
-            Ok(target_path)
-        };
-
-        let mut new_path = new_file_path(&data)?;
-        let mut dup_counter = 0;
-
-        let lock_rename = match LOCK_MOVE_OPERATION.lock() {
-            Ok(guard) => Some(guard),
-            Err(err) => {
-                warn!("Failed to acquire lock for move operation: {err}");
-                None
-            }
-        };
-
-        while new_path.exists() {
-            debug!("Target file already exists: {}", new_path.display());
-
-            let source_file_stream = std::fs::File::open(&new_path).map_err(|err| {
-                anyhow!(
-                    "Failed to open source file for de-duplication check: {}: {err}",
-                    new_path.display()
-                )
-            })?;
-            match std::fs::File::open(path) {
-                Ok(target_file_stream) => {
-                    // now compare file contents
-
-                    match streams_equal(source_file_stream, target_file_stream) {
-                        Err(err) => {
-                            error!(
-                                "Failed to compare files: {} {} -> {}.",
-                                path.display(),
-                                new_path.display(),
-                                err
-                            );
-                        }
-                        Ok(true) => {
-                            // source = target
-
-                            drop(lock_rename);
-
-                            debug!("De-duplicating file {} because it is identical to the target file {}.", path.display(), new_path.display());
-
-                            return match self.settings.action_type {
-                                ActionMode::Execute(ActualAction::Move) => fs::remove_file(path).map_err(|err| anyhow!("Failed to remove source file during de-duplication: {}: {err}", path.display())),
-                                ActionMode::Execute(ActualAction::Copy | ActualAction::Hardlink | ActualAction::RelativeSymlink | ActualAction::AbsoluteSymlink) => Ok(()),
-                                ActionMode::DryRun(_action) => {
-                                    Ok(())
+                            BracketingFormattingPriority::Last => {
+                                if let Some(bracketed_format) = &bracketing_info.analysis_last {
+                                    let mut bracketed_format = bracketed_format.as_ref().clone();
+                                    bracketed_format.bracket_info = Some(bracketing_info);
+                                    self.replace_filepath_parts(component, &bracketed_format)
+                                } else {
+                                    self.replace_filepath_parts(component, data)
                                 }
-                            };
-                        }
-                        Ok(false) => {
-                            // source != target
+                            }
+                            BracketingFormattingPriority::Current => {
+                                self.replace_filepath_parts(component, data)
+                            }
                         }
                     }
+                } else {
+                    self.replace_filepath_parts(component, data)
                 }
-                Err(err) => {
-                    warn!(
-                        "Failed to open target file for de-duplication check: {}: {err}",
-                        path.display()
-                    );
-                }
+            })
+            .collect();
+
+        for entry in &path_split {
+            if let Err(err) = entry {
+                return Err(anyhow!("Failed to format filename: {err}"));
             }
+        }
+        let path_split = path_split.into_iter().map(Result::unwrap);
 
-            dup_counter += 1;
-            data.duplicate_counter = Some(dup_counter);
-            let new_path_candidate = new_file_path(&data)?;
-
-            if new_path_candidate == new_path {
-                return Err(anyhow!("Target file {} already exists; content differs. Consider providing the {{:dup}} format specifier to the format string to resolve duplicate naming.", new_path.display()));
+        let mut target_path = self.settings.target_dir.clone();
+        for path_component in path_split {
+            let component = path_component.replace(['/', '\\'], "");
+            if component != ".." {
+                target_path.push(component);
             }
-
-            new_path = new_path_candidate;
         }
-
-        if dup_counter > 0 {
-            info!("De-duplicated target file: {}", new_path.display());
-        }
-
-        action::file_action(
-            path,
-            &new_path,
-            &self.settings.action_type,
-            self.settings.mkdir,
-            lock_rename,
-        )?;
-        Ok(())
+        Ok(target_path)
     }
 
     /// Analyzes a file and returns the analysis context, which includes the file path, whether it's an unknown file, the extracted date, and the information for name formatting.
@@ -802,6 +757,8 @@ impl Analyzer {
 
             (date, cleaned_name)
         };
+
+        let date = date.map(|date| self.settings.output_time_zone.apply(date));
 
         let date_string = match date {
             None => "NODATE".to_string(),
@@ -1005,12 +962,14 @@ impl Analyzer {
         }
 
         let mut entries = fs::read_dir(directory)?.collect::<Vec<std::io::Result<DirEntry>>>();
-        entries.sort_by(|a, b| match (a, b) {
-            (Ok(a), Ok(b)) => a.path().cmp(&b.path()),
-            (Err(_), Ok(_)) => Ordering::Less,
-            (Ok(_), Err(_)) => Ordering::Greater,
-            (Err(_), Err(_)) => Ordering::Equal,
-        });
+        if self.settings.sorted_order() {
+            entries.sort_by(|a, b| match (a, b) {
+                (Ok(a), Ok(b)) => a.path().cmp(&b.path()),
+                (Err(_), Ok(_)) => Ordering::Less,
+                (Ok(_), Err(_)) => Ordering::Greater,
+                (Err(_), Err(_)) => Ordering::Equal,
+            });
+        }
         for entry in entries {
             let entry = entry?;
             let path = entry.path();
@@ -1100,7 +1059,7 @@ pub struct BracketEXIFInformation {
     pub index: u32,
 }
 
-fn streams_equal<R1: Read, R2: Read>(a: R1, b: R2) -> std::io::Result<bool> {
+pub(crate) fn streams_equal<R1: Read, R2: Read>(a: R1, b: R2) -> std::io::Result<bool> {
     let mut a = BufReader::new(a);
     let mut b = BufReader::new(b);
 
