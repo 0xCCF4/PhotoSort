@@ -227,7 +227,7 @@ Options:
   -e, --extensions [<EXTENSIONS>...]
           A comma separated list of file extensions to include in the analysis
           
-          [default: jpg,jpeg,png,tiff,heif,heic,avif,webp]
+          [default: jpg,jpeg,png,tiff,heif,heic,avif,webp,cr2,cr3,nef,arw,raf,orf,rw2,dng]
 
       --time-zone <TIME_ZONE>
           The time zone to assume when a file states no offset. When the file does not provide such
