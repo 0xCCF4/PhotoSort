@@ -1,4 +1,6 @@
-use chrono::NaiveDateTime;
+use crate::analysis::time_zone::{parse_offset, read_in_offset, TimeZone, ZonedDateTime};
+use chrono::{FixedOffset, NaiveDateTime};
+use log::trace;
 use std::io::{Read, Seek};
 use std::str::FromStr;
 
@@ -19,6 +21,19 @@ pub enum ExifDateType {
     Digitized,
 }
 
+impl ExifDateType {
+    /// Returns the tag of the date field and the tag of its offset field.
+    fn tags(self) -> (exif::Tag, exif::Tag) {
+        match self {
+            ExifDateType::Modify => (exif::Tag::DateTime, exif::Tag::OffsetTime),
+            ExifDateType::Creation => (exif::Tag::DateTimeOriginal, exif::Tag::OffsetTimeOriginal),
+            ExifDateType::Digitized => {
+                (exif::Tag::DateTimeDigitized, exif::Tag::OffsetTimeDigitized)
+            }
+        }
+    }
+}
+
 impl FromStr for ExifDateType {
     type Err = anyhow::Error;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -35,45 +50,45 @@ impl FromStr for ExifDateType {
     }
 }
 
-/// This function retrieves the date and time from the EXIF data of a file.
-///
-/// # Arguments
-///
-/// * `file` - A reference to a `File` object.
-///
-/// # Returns
-///
-/// * `Result<Option<NaiveDateTime>>` - A `Result` that, if `Ok`, contains an `Option` with the date and time from the EXIF data.
-///   If the date and time could not be retrieved, the `Option` will be `None`.
-///   If an error occurred during the process, the `Result` will be `Err`.
-///
-/// # Errors
-///
-/// This function will return an error if:
-///
-/// * The file could not be read.
-/// * The EXIF data could not be read from the file.
-/// * The date and time could not be parsed from the EXIF data.
+/// Returns the date and time of a photo from its EXIF data. `file` holds the photo and `date_type`
+/// selects which EXIF date field to read. A value with an EXIF offset uses that offset. A value
+/// without one is read in `zone`. When the EXIF data holds a date of the requested kind, the result
+/// is `Some`, and `None` otherwise. When the file or its EXIF data cannot be read, or when the date
+/// cannot be parsed, the function returns an error.
 pub fn get_exif_time<R: Read + Seek>(
     file: R,
     date_type: ExifDateType,
-) -> anyhow::Result<Option<NaiveDateTime>> {
+    zone: TimeZone,
+) -> anyhow::Result<Option<ZonedDateTime>> {
     let mut bufreader = std::io::BufReader::new(file);
     let exifreader = exif::Reader::new();
     let exif = exifreader.read_from_container(&mut bufreader)?;
-    let datetime = exif.get_field(
-        match date_type {
-            ExifDateType::Modify => exif::Tag::DateTime,
-            ExifDateType::Creation => exif::Tag::DateTimeOriginal,
-            ExifDateType::Digitized => exif::Tag::DateTimeDigitized,
-        },
-        exif::In::PRIMARY,
-    );
+    let (date_tag, offset_tag) = date_type.tags();
+    let Some(field) = exif.get_field(date_tag, exif::In::PRIMARY) else {
+        return Ok(None);
+    };
 
-    Ok(datetime
-        .map(|field| {
-            let datetime = field.display_value().to_string();
-            NaiveDateTime::parse_from_str(&datetime, "%Y-%m-%d %H:%M:%S")
-        })
-        .transpose()?)
+    let datetime = field.display_value().to_string();
+    let time = NaiveDateTime::parse_from_str(&datetime, "%Y-%m-%d %H:%M:%S")?;
+
+    let offset = exif
+        .get_field(offset_tag, exif::In::PRIMARY)
+        .and_then(offset_value);
+
+    Ok(Some(match offset {
+        Some(offset) => {
+            trace!("Using EXIF offset {offset} of {date_tag} for {datetime}");
+            read_in_offset(time, offset)
+        }
+        None => zone.read(time),
+    }))
+}
+
+/// Returns the offset that an EXIF offset field states, for example `+01:00`.
+fn offset_value(field: &exif::Field) -> Option<FixedOffset> {
+    let exif::Value::Ascii(values) = &field.value else {
+        return None;
+    };
+    let text = std::str::from_utf8(values.first()?).ok()?;
+    parse_offset(text.trim_end_matches('\0'))
 }

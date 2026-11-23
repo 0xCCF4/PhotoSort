@@ -1,5 +1,5 @@
+use crate::analysis::time_zone::ZonedDateTime;
 use anyhow::Result;
-use chrono::NaiveDateTime;
 use regex::Regex;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -36,7 +36,7 @@ impl FromStr for BracketingFormattingPriority {
 
 #[derive(Debug, Clone)]
 pub struct NameFormatterInvocationInfo<'a> {
-    pub date: Option<NaiveDateTime>,
+    pub date: Option<ZonedDateTime>,
     pub date_string: String,
     pub date_default_format: String,
     pub file_type: FileType,
