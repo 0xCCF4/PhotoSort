@@ -6,11 +6,9 @@ use crate::analysis::exif2date::ExifDateType;
 use crate::analysis::name_formatters::{
     BracketInfo, BracketingFormattingPriority, FileType, NameFormatterInvocationInfo,
 };
-#[cfg(feature = "video")]
-use crate::analysis::video2date::VideoTimeZone;
+use crate::analysis::time_zone::{TimeZone, ZonedDateTime};
 use action::ActionMode;
 use anyhow::{anyhow, Result};
-use chrono::NaiveDateTime;
 use log::{debug, error, info, trace, warn};
 use regex::{Regex, RegexBuilder};
 use std::cmp::Ordering;
@@ -90,7 +88,8 @@ impl FromStr for AnalysisType {
 /// * `unknown_file_format` - An optional string that represents the target format of files not matching the list of extensions
 /// * `date_format` - A string that represents the format of the dates in the files to analyze.
 /// * `extensions` - A vector of strings that represent the file extensions to consider during analysis.
-/// * `video_time_zone` - How to interpret the creation time of a video file. See [`VideoTimeZone`] for details.
+/// * `time_zone` - The time zone to assume when a file states no offset. See [`TimeZone`] for details.
+/// * `output_time_zone` - The time zone that the file names show. See [`TimeZone`] for details.
 /// * `action_type` - An `ActionMode` that specifies the type of action to perform on a file after analysis.
 /// * `mkdir` - A boolean that indicates whether to create the target directory if it does not exist.
 /// * `excluded_files` - A list of regexes to check if a file should be excluded from analysis.
@@ -112,8 +111,8 @@ pub struct AnalyzerSettings {
     pub date_format: String,
     pub bracketing_formatting: BracketingFormattingPriority,
     pub extensions: Vec<String>,
-    #[cfg(feature = "video")]
-    pub video_time_zone: VideoTimeZone,
+    pub time_zone: TimeZone,
+    pub output_time_zone: TimeZone,
     #[cfg(feature = "video")]
     pub video_extensions: Vec<String>,
     pub action_type: ActionMode,
@@ -297,10 +296,10 @@ impl Analyzer {
         self.name_formatters.push(Box::new(formatter));
     }
 
-    fn analyze_name(&self, name: &str) -> Result<(Option<NaiveDateTime>, String)> {
+    fn analyze_name(&self, name: &str) -> Result<(Option<ZonedDateTime>, String)> {
         let result = analysis::get_name_time(name, &self.name_transformers)?;
         match result {
-            Some((time, name)) => Ok((Some(time), name)),
+            Some((time, name)) => Ok((Some(self.settings.time_zone.read(time)), name)),
             None => Ok((None, name.to_string())),
         }
     }
@@ -308,19 +307,19 @@ impl Analyzer {
     fn analyze_photo_exif<S: Read + Seek>(
         file: S,
         date_type: ExifDateType,
-    ) -> Result<Option<NaiveDateTime>> {
-        let exif_time = analysis::exif2date::get_exif_time(file, date_type)?;
+        zone: TimeZone,
+    ) -> Result<Option<ZonedDateTime>> {
+        let exif_time = analysis::exif2date::get_exif_time(file, date_type, zone)?;
         Ok(exif_time)
     }
 
     #[cfg(feature = "video")]
-    fn analyze_video_metadata<P: AsRef<Path>>(&self, path: P) -> Result<Option<NaiveDateTime>> {
-        let video_time =
-            analysis::video2date::get_video_time_with_zone(path, self.settings.video_time_zone)?;
+    fn analyze_video_metadata<P: AsRef<Path>>(&self, path: P) -> Result<Option<ZonedDateTime>> {
+        let video_time = analysis::video2date::get_video_time(path, self.settings.time_zone)?;
         Ok(video_time)
     }
 
-    fn analyze_embedded_metadata<A: AsRef<Path>>(&self, path: A) -> Result<Option<NaiveDateTime>> {
+    fn analyze_embedded_metadata<A: AsRef<Path>>(&self, path: A) -> Result<Option<ZonedDateTime>> {
         let path = path.as_ref();
 
         #[cfg(feature = "video")]
@@ -336,7 +335,11 @@ impl Analyzer {
 
         if photo {
             let file = File::open(path)?;
-            return Analyzer::analyze_photo_exif(&file, self.settings.exif_date_type);
+            return Analyzer::analyze_photo_exif(
+                &file,
+                self.settings.exif_date_type,
+                self.settings.time_zone,
+            );
         }
         #[cfg(feature = "video")]
         if video {
@@ -352,8 +355,9 @@ impl Analyzer {
     /// * `path` - A `PathBuf` that represents the path of the file to analyze.
     ///
     /// # Returns
-    /// * `Result<(Option<NaiveDateTime>, String)>` - Returns a tuple containing an `Option<NaiveDateTime>` and a `String`.
-    ///   The `Option<NaiveDateTime>` represents the date and time extracted from the file, if any.
+    /// * `Result<(Option<ZonedDateTime>, String)>` - Returns a tuple containing an `Option<ZonedDateTime>` and a `String`.
+    ///   The `Option<ZonedDateTime>` represents the date and time extracted from the file, if any,
+    ///   with the offset that the input time zone gives it.
     ///   The `String` represents the transformed name of the file.
     ///
     /// # Errors
@@ -361,7 +365,7 @@ impl Analyzer {
     /// * The file name cannot be retrieved or is invalid.
     /// * The file cannot be opened.
     /// * An error occurs during the analysis of the file's Exif data or name.
-    pub fn analyze<A: AsRef<Path>>(&self, path: A) -> Result<(Option<NaiveDateTime>, String)> {
+    pub fn analyze<A: AsRef<Path>>(&self, path: A) -> Result<(Option<ZonedDateTime>, String)> {
         let path = path.as_ref();
 
         let name = path
@@ -802,6 +806,8 @@ impl Analyzer {
 
             (date, cleaned_name)
         };
+
+        let date = date.map(|date| self.settings.output_time_zone.apply(date));
 
         let date_string = match date {
             None => "NODATE".to_string(),

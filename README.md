@@ -26,8 +26,7 @@ The documentation can be found here: <https://docs.rs/photo_sort>
 - **Dry Run Mode**: Test the tool without making any changes to your files. The tool will print the actions it would
   take without actually executing them.
 - **Sort photos and videos**: `PhotoSort` can sort both photos and videos by their metadata.
-- **Video time zones**: The creation time of a video carries no time zone. `--video-time-zone` selects how to read
-  it. The default `auto` uses the real time (Apple devices), UTC (Android devices), else `local` time.
+- **Time zones**: Timezone offsets are extracted from the to be sorted files, if no offset is given cli args drive the interpretation.
 - **Bracketing Support**: `PhotoSort` can detect bracketed photo sets with different exposure levels and sort them together.
 - **File Inclusion/Exclusion**: You can specify which files to include or exclude from processing based on patterns or regular expressions.
 - **Multi-threading**: `PhotoSort` can utilize multiple threads to speed up file I/O operations.
@@ -241,17 +240,20 @@ Options:
   -h, --help                           Print help
   
   -V, --version                        Print version 
-  
+
+      --time-zone <TIME_ZONE>              The time zone to assume when a file states no offset. When the file does not
+                                           provide such an offset, this value is used. `local` is the local time of this
+                                           computer, `utc` is UTC, and a fixed offset such as `+02:00` is the time in that
+                                           offset [default: local]
+
+      --output-time-zone <OUTPUT_TIME_ZONE>
+                                           The time zone that the file names show. `local` shows the local time of this
+                                           computer, `utc` shows UTC, and a fixed offset such as `+02:00` shows the time
+                                           in that offset. The date of the file is read first, then it is converted to this
+                                           zone. Without this option, the value of `--time-zone` is used
+
 When building with video support enabled (see below):
       --video-extensions [<VIDEO_EXTENSIONS>...]  A comma separated list of video extensions to include in the analysis [default: mp4,mov,avi]
-
-      --video-time-zone <VIDEO_TIME_ZONE>         How to interpret the creation time of a video. `auto` uses the time zone
-                                                  information that the file carries: the creation date of Apple devices wins,
-                                                  which holds the local time with its UTC offset, and files from Android
-                                                  devices are treated as UTC. Other files are used as written. `local` uses the
-                                                  value as written, `utc` treats the value as UTC and converts it to the local
-                                                  time of this computer. A fixed offset such as `+02:00` treats the value as
-                                                  UTC and converts it to that offset [default: auto]                                                                                                                                                                 
 ```
 
 ## Installation
