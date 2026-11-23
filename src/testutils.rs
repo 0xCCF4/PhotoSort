@@ -95,6 +95,10 @@ pub struct AnalyzerOptions {
     pub excluded_files: Vec<Regex>,
     pub dont_follow_symlinked_dirs: bool,
     pub dont_follow_symlinked_files: bool,
+    /// Skip the sorting of directory entries.
+    pub fast: bool,
+    /// Set the bracketed file format, which enables the bracketing mode.
+    pub bracketed_file_format: Option<String>,
 }
 
 /// Builds an `Analyzer` for the source directory `root`.
@@ -126,17 +130,18 @@ pub fn analyzer_with(root: &Path, options: AnalyzerOptions) -> Analyzer {
         source_dirs,
         target_dir: root.to_path_buf(),
         recursive_source: true,
+        fast: options.fast,
         dont_follow_symlinked_dirs: options.dont_follow_symlinked_dirs,
         dont_follow_symlinked_files: options.dont_follow_symlinked_files,
         file_format: String::new(),
         nodate_file_format: String::new(),
         unknown_file_format: None,
-        bracketed_file_format: None,
+        bracketed_file_format: options.bracketed_file_format,
         date_format: String::new(),
         bracketing_formatting: BracketingFormattingPriority::default(),
         extensions: Vec::new(),
-        #[cfg(feature = "video")]
-        video_time_zone: crate::analysis::video2date::VideoTimeZone::default(),
+        time_zone: crate::analysis::time_zone::TimeZone::default(),
+        output_time_zone: crate::analysis::time_zone::TimeZone::default(),
         #[cfg(feature = "video")]
         video_extensions: Vec::new(),
         action_type: ActionMode::DryRun(ActualAction::Move),

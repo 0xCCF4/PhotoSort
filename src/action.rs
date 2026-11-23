@@ -5,7 +5,6 @@ use std::fmt::{Display, Formatter};
 use std::fs;
 use std::path::Path;
 use std::str::FromStr;
-use std::sync::MutexGuard;
 
 /// `ActualAction` is an enumeration that defines the different types of actions that can be performed on a file.
 ///
@@ -85,7 +84,6 @@ impl FromStr for ActualAction {
 /// * `target` - A `PathBuf` reference to the target file.
 /// * `action` - An `ActionMode` reference specifying the action to be performed.
 /// * `mkdir` - Mkdir subfolders on the way, in dry-run mode no subfolders are created.
-/// * `guard` - A `MutexGuard` to ensure that the file operations are thread-safe.
 ///
 /// # Returns
 ///
@@ -112,13 +110,14 @@ pub fn file_action<P: AsRef<Path>, Q: AsRef<Path>>(
     target: Q,
     action: &ActionMode,
     mkdir: bool,
-    guard: Option<MutexGuard<()>>,
 ) -> Result<()> {
     let source = source.as_ref();
     let target = target.as_ref();
 
-    error_file_exists(target)
-        .map_err(|e| anyhow!("Target file already exists: {target:?} - {e:?}"))?;
+    if matches!(action, ActionMode::DryRun(_)) {
+        error_file_exists(target)
+            .map_err(|e| anyhow!("Target file already exists: {target:?} - {e:?}"))?;
+    }
 
     // check if parent folder exists
     if let Some(parent) = target.parent() {
@@ -139,21 +138,16 @@ pub fn file_action<P: AsRef<Path>, Q: AsRef<Path>>(
         }
     }
 
-    let result = match action {
-        ActionMode::Execute(ActualAction::Move) => move_file(source, target, guard),
-        ActionMode::Execute(ActualAction::Copy) => copy_file(source, target, guard),
-        ActionMode::Execute(ActualAction::Hardlink) => hardlink_file(source, target, guard),
+    match action {
+        ActionMode::Execute(ActualAction::Move) => move_file(source, target),
+        ActionMode::Execute(ActualAction::Copy) => copy_file(source, target),
+        ActionMode::Execute(ActualAction::Hardlink) => hardlink_file(source, target),
         ActionMode::Execute(ActualAction::RelativeSymlink) => relative_symlink_file(source, target),
         ActionMode::Execute(ActualAction::AbsoluteSymlink) => absolute_symlink_file(source, target),
         ActionMode::DryRun(action) => {
             dry_run(source, target, *action);
             Ok(())
         }
-    };
-
-    match result {
-        Ok(()) => Ok(()),
-        Err(e) => Err(anyhow!("Failed to perform action: {e:?}")),
     }
 }
 
@@ -178,24 +172,62 @@ fn error_file_exists(target: &Path) -> std::io::Result<()> {
     }
 }
 
-fn copy_file<A: AsRef<Path>, B: AsRef<Path>>(
-    source: A,
-    target: B,
-    guard: Option<MutexGuard<()>>,
-) -> std::io::Result<()> {
+/// Claims a target path for this process.
+///
+/// # Errors
+///
+/// Returns an error if the path exists. The plan computed this name for the
+/// source, so a file that is already there was created after the plan was built,
+/// or the file system does not separate the two names. Nothing is overwritten in
+/// either case.
+fn reserve_target(target: &Path) -> Result<()> {
+    match fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(target)
+    {
+        Ok(_) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => Err(anyhow!(
+            "Target file already exists: {}. Nothing was overwritten. Another process created it after the plan was built, or the file system does not separate the two names.",
+            target.display()
+        )),
+        Err(err) => Err(anyhow!(
+            "Failed to create the target file {}: {err}",
+            target.display()
+        )),
+    }
+}
+
+fn copy_file<A: AsRef<Path>, B: AsRef<Path>>(source: A, target: B) -> Result<()> {
     let source = source.as_ref();
     let target = target.as_ref();
 
     debug!("Copying {} -> {}", source.display(), target.display());
 
-    fs::write(target, [])?; // create empty file to prevent race conditions with other threads
-    drop(guard); // release the lock before copying the file
+    reserve_target(target)?;
+
+    if let Err(err) = copy_into_reserved(source, target) {
+        let _ = fs::remove_file(target);
+        return Err(anyhow!(
+            "Failed to copy {} to {}: {err}",
+            source.display(),
+            target.display()
+        ));
+    }
+
+    Ok(())
+}
+
+/// Copies `source` over the reserved (and still empty) file `target` and applies
+/// the timestamps of the source file.
+fn copy_into_reserved<A: AsRef<Path>, B: AsRef<Path>>(source: A, target: B) -> std::io::Result<()> {
+    let source = source.as_ref();
+    let target = target.as_ref();
 
     let metadata = fs::metadata(source)?;
     let result = fs::copy(source, target)?;
 
     if metadata.len() != result {
-        let _ = fs::remove_file(target);
         return Err(std::io::Error::other("File copy failed"));
     }
 
@@ -207,36 +239,45 @@ fn copy_file<A: AsRef<Path>, B: AsRef<Path>>(
     Ok(())
 }
 
-fn move_file<A: AsRef<Path>, B: AsRef<Path>>(
-    source: A,
-    target: B,
-    guard: Option<MutexGuard<()>>,
-) -> std::io::Result<()> {
+fn move_file<A: AsRef<Path>, B: AsRef<Path>>(source: A, target: B) -> Result<()> {
     let source = source.as_ref();
     let target = target.as_ref();
 
     debug!("Moving {} -> {}", source.display(), target.display());
 
-    let result = fs::rename(source, target);
-    if let Err(err) = result {
-        trace!(
-            "Renaming file failed, falling back to cut/paste (maybe cross-fs rename operation?): {:?} for file {} -> {}",
-            err,
-            source.display(),
-            target.display()
-        );
-        copy_file(source, target, guard)?;
-        fs::remove_file(source)
-    } else {
-        Ok(())
+    reserve_target(target)?;
+
+    match fs::rename(source, target) {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            trace!(
+                "Renaming file failed, falling back to cut/paste (maybe cross-fs rename operation?): {:?} for file {} -> {}",
+                err,
+                source.display(),
+                target.display()
+            );
+
+            if let Err(err) = copy_into_reserved(source, target) {
+                let _ = fs::remove_file(target);
+                return Err(anyhow!(
+                    "Failed to copy {} to {}: {err}",
+                    source.display(),
+                    target.display()
+                ));
+            }
+
+            fs::remove_file(source).map_err(|err| {
+                anyhow!(
+                    "The file was copied to {} but the source {} could not be removed: {err}",
+                    target.display(),
+                    source.display()
+                )
+            })
+        }
     }
 }
 
-fn hardlink_file<A: AsRef<Path>, B: AsRef<Path>>(
-    source: A,
-    target: B,
-    guard: Option<MutexGuard<()>>,
-) -> std::io::Result<()> {
+fn hardlink_file<A: AsRef<Path>, B: AsRef<Path>>(source: A, target: B) -> Result<()> {
     let source = source.as_ref();
     let target = target.as_ref();
 
@@ -254,16 +295,13 @@ fn hardlink_file<A: AsRef<Path>, B: AsRef<Path>>(
             source.display(),
             target.display()
         );
-        copy_file(source, target, guard)
+        copy_file(source, target)
     } else {
         Ok(())
     }
 }
 
-fn relative_symlink_file<A: AsRef<Path>, B: AsRef<Path>>(
-    source: A,
-    target: B,
-) -> std::io::Result<()> {
+fn relative_symlink_file<A: AsRef<Path>, B: AsRef<Path>>(source: A, target: B) -> Result<()> {
     let source = source.as_ref();
     let target = target.as_ref();
 
@@ -273,15 +311,16 @@ fn relative_symlink_file<A: AsRef<Path>, B: AsRef<Path>>(
         target.display()
     );
 
-    symlink::symlink_file(source, target)?;
-
-    Ok(())
+    symlink::symlink_file(source, target).map_err(|err| {
+        anyhow!(
+            "Failed to create the symbolic link {} -> {}: {err}",
+            target.display(),
+            source.display()
+        )
+    })
 }
 
-fn absolute_symlink_file<A: AsRef<Path>, B: AsRef<Path>>(
-    source: A,
-    target: B,
-) -> std::io::Result<()> {
+fn absolute_symlink_file<A: AsRef<Path>, B: AsRef<Path>>(source: A, target: B) -> Result<()> {
     let source = source.as_ref();
     let target = target.as_ref();
 
@@ -290,7 +329,8 @@ fn absolute_symlink_file<A: AsRef<Path>, B: AsRef<Path>>(
         source.display(),
         target.display()
     );
-    let source = fs::canonicalize(source)?;
+    let source = fs::canonicalize(source)
+        .map_err(|err| anyhow!("Failed to resolve the path {}: {err}", source.display()))?;
 
     relative_symlink_file(&source, target)
 }
