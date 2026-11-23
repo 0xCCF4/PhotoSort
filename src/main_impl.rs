@@ -9,13 +9,14 @@ use photo_sort::analysis::bracketed::get_bracketing_info;
 use photo_sort::analysis::exif2date::ExifDateType;
 use photo_sort::analysis::name_formatters::{BracketInfo, BracketingFormattingPriority};
 use photo_sort::analysis::time_zone::TimeZone;
+use photo_sort::target_plan::{AnalyzedFile, Planner};
 use photo_sort::{action, build_file_patterns, AnalysisType, Analyzer, BracketEXIFInformation};
 use regex::Regex;
 use std::collections::{HashSet, VecDeque};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc::channel;
 use std::sync::Arc;
 use threadpool::ThreadPool;
 
@@ -220,9 +221,19 @@ struct Arguments {
     /// If set, display a progress bar while processing files.
     #[arg(short, long, default_value = "false")]
     progress: bool,
-    /// If set, use multi-threading
+    /// If set, use multi-threading. Multi-threaded mode keeps the analysis of all files
+    /// in memory for the planning step, so memory grows with the number of files. Omit
+    /// this option, or use `--threads 1`, to process one file at a time with a constant
+    /// amount of memory if you run out of memory, or sort smaller subset of files.
     #[arg(long)]
     threads: Option<usize>,
+    /// If set, do not sort the file list before planning and do not sort the entries of a
+    /// directory while scanning. This saves time on large libraries, but the result is a
+    /// non-reproducible sorting: the order of the actions and the `{dup}` numbers depend on the
+    /// order in which the file system returns the entries. Ignored with `--bracket`, because
+    /// the bracketing detection needs the sorted order.
+    #[arg(long, default_value = "false")]
+    fast: bool,
 }
 
 fn setup_loggers<Q: AsRef<Path>>(
@@ -458,6 +469,7 @@ pub fn main() {
         source_dirs: args.source_dir.iter().map(PathBuf::from).collect(),
         target_dir: PathBuf::from(args.target_dir.as_str()),
         recursive_source: args.recursive,
+        fast: args.fast,
         dont_follow_symlinked_dirs: args.dont_follow_symlinks || args.dont_follow_symlinked_dirs,
         dont_follow_symlinked_files: args.dont_follow_symlinks || args.dont_follow_symlinked_files,
         file_format: args.file_format.clone(),
@@ -524,23 +536,15 @@ pub fn main() {
     }
 
     debug!("Found {} files in source folders", files.len());
-    files.sort();
-    trace!("Sorting finished.");
+    if analyzer.settings.sorted_order() {
+        files.sort();
+        trace!("Sorting finished.");
+    }
 
-    let threadpool = args.threads.map(|v| v.max(1)).map(ThreadPool::new);
-    let (sender, receiver) = channel();
-
-    let context = match threadpool {
-        None => ExecutionContext::SingleThreaded(Box::new(NormalContext { analyzer })),
-        Some(pool) => ExecutionContext::MultiThreaded(ThreadPoolContext {
-            output: sender,
-            receiver,
-            pool,
-            analyzer: Arc::new(analyzer),
-        }),
-    };
-
-    let jobs = files.len();
+    let threads = args
+        .threads
+        .map(|v| v.max(1))
+        .filter(|threads| *threads > 1);
 
     let bar = args.progress.then(|| {
         let bar = ProgressBar::new(files.len() as u64);
@@ -555,11 +559,24 @@ pub fn main() {
         bar
     });
 
+    // The files that reach the analysis, with the bracketing information that
+    // was derived for them. The bracketing runs before the analysis because a
+    // bracketed photo set changes the target name of every file in the set.
+    let mut queue: Vec<(PathBuf, Option<BracketInfo<'static>>)> = Vec::new();
+
+    let files_len = files.len();
     let mut bracketed_queue = VecDeque::<(PathBuf, BracketEXIFInformation)>::new();
     let mut bracket_indices_used = std::collections::HashSet::new();
     let mut bracket_group_index = 1;
 
-    let file_count = files.len();
+    // In multi-threaded mode the analysis and the actions report their own
+    // progress, so the scan does not advance the bar.
+    let scan_bar = if threads.is_none() {
+        bar.as_ref()
+    } else {
+        None
+    };
+
     for (i, file) in files.into_iter().enumerate() {
         if let Some(bar) = &bar {
             bar.set_message(format!("{}", file.display()));
@@ -567,7 +584,7 @@ pub fn main() {
 
         #[allow(clippy::unnecessary_debug_formatting)]
         if bracket_mode {
-            let photo_file = match is_photo_extension(&file, &context) {
+            let photo_file = match is_photo_extension(&file, &analyzer) {
                 Ok(is_video) => is_video,
                 Err(e) => {
                     eprintln!("The file {file:?} has an invalid file extension which can not be represented as a UTF-8 string. Error: {e}");
@@ -607,8 +624,9 @@ pub fn main() {
                         drain_bracketed_queue(
                             &mut bracketed_queue,
                             &mut bracket_indices_used,
-                            &context,
-                            bar.as_ref(),
+                            &analyzer,
+                            &mut queue,
+                            scan_bar,
                             i,
                             &mut bracket_group_index,
                         );
@@ -623,26 +641,27 @@ pub fn main() {
                         drain_bracketed_queue(
                             &mut bracketed_queue,
                             &mut bracket_indices_used,
-                            &context,
-                            bar.as_ref(),
+                            &analyzer,
+                            &mut queue,
+                            scan_bar,
                             i,
                             &mut bracket_group_index,
                         );
                     }
 
-                    process_file(file, &context, None);
+                    queue.push((file, None));
                 }
                 Err(e) => {
                     error!("Error processing file {}: {e}", file.display());
 
-                    process_file(file, &context, None);
+                    queue.push((file, None));
                 }
             }
         } else {
-            process_file(file, &context, None);
+            queue.push((file, None));
         }
 
-        if let Some(bar) = &bar {
+        if let Some(bar) = scan_bar {
             bar.set_position(i.saturating_sub(bracketed_queue.len()) as u64);
         }
     }
@@ -652,28 +671,17 @@ pub fn main() {
         drain_bracketed_queue(
             &mut bracketed_queue,
             &mut bracket_indices_used,
-            &context,
-            bar.as_ref(),
-            file_count,
+            &analyzer,
+            &mut queue,
+            scan_bar,
+            files_len,
             &mut bracket_group_index,
         );
     }
 
-    if let Some(context) = context.multi_threading() {
-        if let Some(bar) = &bar {
-            bar.set_position(0);
-        }
-        let mut count = 0;
-        for (i, ()) in context.iter().take(jobs).enumerate() {
-            if let Some(bar) = &bar {
-                bar.set_position(i as u64);
-            }
-            count += 1;
-        }
-
-        if count != jobs {
-            error!("Not all jobs got executed");
-        }
+    match threads {
+        Some(threads) => run_batch(analyzer, queue, threads, bar.as_ref()),
+        None => run_streaming(&analyzer, &queue, bar.as_ref()),
     }
 
     if let Some(bar) = &bar {
@@ -684,20 +692,136 @@ pub fn main() {
     std::process::exit(exitcode::OK);
 }
 
+/// Analyses and executes one file at a time. Memory stays low, but only one core
+/// is used.
+fn run_streaming(
+    analyzer: &Analyzer,
+    queue: &[(PathBuf, Option<BracketInfo<'static>>)],
+    bar: Option<&ProgressBar>,
+) {
+    for (i, (file, bracket_info)) in queue.iter().enumerate() {
+        let result = analyzer.run_file(file, bracket_info);
+        if let Err(err) = result {
+            error!("Error processing file: {err}");
+        }
+
+        if let Some(bar) = bar {
+            bar.set_position(i as u64 + 1);
+        }
+    }
+}
+
+/// Analyses in parallel, plans the whole batch in one thread, then executes in
+/// parallel.
+///
+/// The plan holds the analysis of every file, so memory grows with the number of
+/// files. The advantage is that no file is written while the target names are
+/// computed, which keeps the de-duplication independent of the timing.
+fn run_batch(
+    analyzer: Analyzer,
+    queue: Vec<(PathBuf, Option<BracketInfo<'static>>)>,
+    threads: usize,
+    bar: Option<&ProgressBar>,
+) {
+    let analyzer = Arc::new(analyzer);
+    let pool = ThreadPool::new(threads);
+    let total = queue.len();
+
+    if let Some(bar) = bar {
+        bar.set_length(total as u64);
+        bar.set_position(0);
+        bar.set_message("Analyzing");
+    }
+
+    // Phase 1: analysis.
+    let (sender, receiver) = channel();
+    for (index, (file, bracket)) in queue.into_iter().enumerate() {
+        let sender = sender.clone();
+        let analyzer = analyzer.clone();
+        pool.execute(move || {
+            let result = analyzer.analyze_context(&file);
+            if sender.send((index, file, bracket, result)).is_err() {
+                error!("Failed to send the analysis result to the planning thread");
+            }
+        });
+    }
+    drop(sender);
+
+    let mut analyzed: Vec<Option<AnalyzedFile>> = (0..total).map(|_| None).collect();
+
+    for (index, file, bracket, result) in receiver.iter() {
+        match result {
+            Ok(Some(info)) => {
+                analyzed[index] = Some(AnalyzedFile {
+                    source: file,
+                    info,
+                    bracket,
+                });
+            }
+            Ok(None) => {
+                trace!("File {} was skipped", file.display());
+            }
+            Err(err) => {
+                error!("Error analyzing file {}: {err}", file.display());
+            }
+        }
+
+        if let Some(bar) = bar {
+            bar.inc(1);
+        }
+    }
+
+    // Phase 2: planning. A sorted order gives stable {dup} numbers, so it is
+    // skipped only when the user asks for speed with --fast.
+    let mut analyzed: Vec<_> = analyzed.into_iter().flatten().collect();
+    if analyzer.settings.sorted_order() {
+        analyzed.sort_by(|a, b| a.source.cmp(&b.source));
+        trace!("Sorted {} analysed files before planning", analyzed.len());
+    }
+
+    let plan = Planner::batch(analyzer.as_ref()).plan(analyzed);
+
+    for (source, err) in &plan.errors {
+        error!("Error processing file {}: {err}", source.display());
+    }
+
+    // Phase 3: execution.
+    if let Some(bar) = bar {
+        bar.set_position(0);
+        bar.set_length(plan.entries.len() as u64);
+        bar.set_message("Writing");
+    }
+
+    let (done_sender, done_receiver) = channel();
+    for entry in plan.entries {
+        let done_sender = done_sender.clone();
+        let analyzer = analyzer.clone();
+        pool.execute(move || {
+            if let Err(err) = analyzer.execute_entry(&entry) {
+                error!("Error processing file {}: {err}", entry.source.display());
+            }
+            let _ = done_sender.send(());
+        });
+    }
+    drop(done_sender);
+
+    for () in done_receiver.iter() {
+        if let Some(bar) = bar {
+            bar.inc(1);
+        }
+    }
+}
+
 #[allow(clippy::similar_names)]
 fn drain_bracketed_queue(
     queue: &mut VecDeque<(PathBuf, BracketEXIFInformation)>,
     index_list: &mut std::collections::HashSet<u32>,
-    context: &ExecutionContext,
+    analyzer: &Analyzer,
+    output: &mut Vec<(PathBuf, Option<BracketInfo<'static>>)>,
     bar: Option<&ProgressBar>,
     target_progress: usize,
     group_index: &mut usize,
 ) {
-    let analyzer = match context {
-        ExecutionContext::SingleThreaded(context) => &context.analyzer,
-        ExecutionContext::MultiThreaded(context) => &context.analyzer,
-    };
-
     index_list.clear();
     if queue.is_empty() {
         return;
@@ -750,7 +874,7 @@ fn drain_bracketed_queue(
     for (i, file) in list.iter().enumerate() {
         let mut info = info.clone();
         info.sequence_number = file.1.index;
-        process_file(file.0.clone(), context, Some(info));
+        output.push((file.0.clone(), Some(info)));
 
         if let Some(bar) = bar {
             bar.set_position(target_progress.saturating_sub(list.len() - 1 - i) as u64);
@@ -758,65 +882,6 @@ fn drain_bracketed_queue(
     }
 }
 
-struct ThreadPoolContext {
-    pub pool: ThreadPool,
-    pub output: Sender<()>,
-    pub receiver: Receiver<()>,
-    pub analyzer: Arc<Analyzer>,
-}
-
-struct NormalContext {
-    pub analyzer: Analyzer,
-}
-
-enum ExecutionContext {
-    MultiThreaded(ThreadPoolContext),
-    SingleThreaded(Box<NormalContext>),
-}
-
-impl ExecutionContext {
-    pub fn multi_threading(self) -> Option<Receiver<()>> {
-        if let ExecutionContext::MultiThreaded(context) = self {
-            Some(context.receiver)
-        } else {
-            None
-        }
-    }
-}
-
-fn process_file(
-    file: PathBuf,
-    context: &ExecutionContext,
-    bracket_info: Option<BracketInfo<'static>>,
-) {
-    match context {
-        ExecutionContext::SingleThreaded(context) => {
-            let result = context.analyzer.run_file(&file, &bracket_info);
-            if let Err(err) = result {
-                error!("Error processing file: {err}");
-            }
-        }
-        ExecutionContext::MultiThreaded(context) => {
-            let output = context.output.clone();
-            let analyzer = context.analyzer.clone();
-            context.pool.execute(move || {
-                let result = analyzer.run_file(&file, &bracket_info);
-                if let Err(err) = result {
-                    error!("Error processing file: {err}");
-                }
-                output.send(()).expect("thread pool channel closed");
-            });
-        }
-    }
-}
-
-fn is_photo_extension<P: AsRef<Path>>(path: P, context: &ExecutionContext) -> anyhow::Result<bool> {
-    match context {
-        ExecutionContext::SingleThreaded(context) => context
-            .analyzer
-            .is_valid_photo_extension(path.as_ref().extension()),
-        ExecutionContext::MultiThreaded(context) => context
-            .analyzer
-            .is_valid_photo_extension(path.as_ref().extension()),
-    }
+fn is_photo_extension<P: AsRef<Path>>(path: P, analyzer: &Analyzer) -> anyhow::Result<bool> {
+    analyzer.is_valid_photo_extension(path.as_ref().extension())
 }
